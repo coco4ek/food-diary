@@ -331,18 +331,20 @@ function setTitle(){
   else{t.textContent="Настройки";s.textContent=""}
 }
 function go(v,replace){
+  if(!["diary","week","settings"].includes(v))return;
   if(v===view&&!replace)return;
   view=v;
   $("vDiary").hidden=v!=="diary";$("vWeek").hidden=v!=="week";$("settings").hidden=v!=="settings";
   const nav=v!=="settings";$("prev").hidden=!nav;$("next").hidden=!nav;$("gear").hidden=!nav;$("back").hidden=nav;
-  document.querySelectorAll(".tab").forEach(t=>t.dataset.view===v?t.setAttribute("aria-current","page"):t.removeAttribute("aria-current"));
+  document.querySelectorAll(".tab[data-view]").forEach(t=>t.dataset.view===v?t.setAttribute("aria-current","page"):t.removeAttribute("aria-current"));
   document.body.classList.toggle("pushed",v==="settings");
   setTitle();window.scrollTo(0,0);
   if(v==="settings"){if(me&&me.isAdmin){loadConfig();loadPeople()}if(!replace)history.pushState({v:"settings"},"")}
   if(v==="week")renderWeek();
   if(v==="diary")renderDay();
 }
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{haptic();go(t.dataset.view)});
+// only real screen tabs navigate; «Галерея» and «Описать» in the bar are actions
+document.querySelectorAll(".tab[data-view]").forEach(t=>t.onclick=()=>{haptic();go(t.dataset.view)});
 function shiftDay(n){
   const today=new Date();today.setHours(12,0,0,0);
   let d=addDays(day,n);if(d>today)d=today;if(key(d)===key(day))return;
