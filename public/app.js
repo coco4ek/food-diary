@@ -582,6 +582,17 @@ function fieldEl(f){
   if(f.source==="app"&&f.type!=="secret"){const r=el("button","reset","сбросить");r.type="button";r.title="Вернуть значение из .env или по умолчанию";r.onclick=()=>saveCfg({[f.key]:null},l.closest("form"));lab.append(r)}
   l.append(lab);
   let inp;
+  if(f.type==="select"){
+    // a list of known models + «Другая модель…» that reveals a text field; the text field carries the value
+    const sel=el("select","txt");sel.id=id+"_sel";
+    const known=(f.options||[]).some(o=>o.value===f.value);
+    for(const o of f.options||[]){const op=el("option",null,o.label);op.value=o.value;sel.append(op)}
+    const other=el("option",null,"Другая модель…");other.value="__other";sel.append(other);
+    const txt=el("input","txt");txt.id=id;txt.type="text";txt.spellcheck=false;txt.autocapitalize="off";txt.placeholder="Название модели, например openai/gpt-4o-mini";txt.value=f.value||"";
+    sel.value=known?f.value:"__other";txt.hidden=known;
+    sel.onchange=()=>{if(sel.value==="__other"){txt.hidden=false;txt.value=known?"":f.value;txt.focus()}else{txt.hidden=true;txt.value=sel.value}};
+    l.htmlFor=sel.id;l.append(sel,txt);if(f.help)l.append(el("small",null,f.help));return l;
+  }
   if(f.type==="textarea"){inp=el("textarea","txt");inp.rows=2;inp.value=f.value||""}
   else{
     inp=el("input","txt");inp.type=f.type==="secret"?"password":f.type==="number"?"number":f.type==="url"?"url":f.type==="email"?"email":"text";

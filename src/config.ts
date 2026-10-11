@@ -2,7 +2,7 @@
 // Only things needed before the app can start stay env-only: PORT, DB_PATH, ADMIN_EMAIL, LOG_LEVEL.
 import { getSetting, setSetting } from "./db.js";
 
-export type FieldType = "text" | "url" | "email" | "number" | "bool" | "secret" | "textarea";
+export type FieldType = "text" | "url" | "email" | "number" | "bool" | "secret" | "textarea" | "select";
 export type Field = {
   key: string;
   group: "model" | "limits" | "mail" | "site" | "login";
@@ -30,11 +30,14 @@ export const FIELDS: Field[] = [
   // ---- model ----
   { key: "llm_api_key", group: "model", label: "API-ключ", type: "secret", env: "LLM_API_KEY",
     validate: (v) => (v.length < 8 || v.length > 400 || /\s/.test(v) ? "Ключ выглядит неверно: без пробелов, от 8 символов" : null) },
-  { key: "llm_model", group: "model", label: "Модель", type: "text", env: "LLM_MODEL", def: "glm-4.6v",
-    help: "Модель должна понимать фото.",
+  { key: "llm_model", group: "model", label: "Модель", type: "select", env: "LLM_MODEL", def: "glm-4.6v",
+    help: "Модели GLM от z.ai, которые понимают фото. «Другая модель…» — вписать любое название (например, для OpenRouter).",
     options: [
-      { value: "glm-4.6v", label: "основная" }, { value: "glm-4.6v-flashx", label: "дешевле и быстрее" },
-      { value: "glm-4.6v-flash", label: "бесплатная" }, { value: "glm-5v-turbo", label: "новейшая" },
+      { value: "glm-4.6v", label: "GLM-4.6V — основная, точная" },
+      { value: "glm-4.6v-flashx", label: "GLM-4.6V-FlashX — быстрее и дешевле" },
+      { value: "glm-4.6v-flash", label: "GLM-4.6V-Flash — бесплатная" },
+      { value: "glm-5v-turbo", label: "GLM-5V-Turbo — новейшая, дороже" },
+      { value: "glm-4.5v", label: "GLM-4.5V — предыдущее поколение" },
     ] },
   { key: "llm_base_url", group: "model", label: "Адрес API", type: "url", env: "LLM_BASE_URL", def: "https://api.z.ai/api/paas/v4",
     help: "z.ai: https://api.z.ai/api/paas/v4 · OpenRouter: https://openrouter.ai/api/v1" },
