@@ -55,7 +55,30 @@ CREATE TABLE IF NOT EXISTS usage (
   count   INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, date)
 );
+-- email sign-in: one pending code per address
+CREATE TABLE IF NOT EXISTS email_codes (
+  email        TEXT PRIMARY KEY,
+  code_hash    TEXT NOT NULL,
+  expires_at   INTEGER NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  sent_at      INTEGER NOT NULL,
+  window_start INTEGER NOT NULL,
+  window_count INTEGER NOT NULL DEFAULT 1
+);
+-- addresses allowed to sign up while registration is invite-only
+CREATE TABLE IF NOT EXISTS email_invites (
+  email      TEXT PRIMARY KEY,
+  invited_by INTEGER,
+  created_at INTEGER NOT NULL
+);
 `);
+
+/* ---------- migrations for databases created by earlier versions ---------- */
+const cols = new Set((db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[]).map((c) => c.name));
+if (!cols.has("email")) db.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
+if (!cols.has("disabled")) db.exec(`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`);
+if (!cols.has("last_login_at")) db.exec(`ALTER TABLE users ADD COLUMN last_login_at INTEGER`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)`);
 
 export const getSetting = (key: string): string | undefined =>
   (db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined)?.value;
@@ -71,7 +94,8 @@ export const hash = (t: string) => createHash("sha256").update(t).digest("hex");
 export const newToken = () => randomBytes(24).toString("base64url");
 export const now = () => Date.now();
 
-export type User = { id: number; name: string; is_admin: number; goal: number };
+export type User = { id: number; name: string; email: string | null; is_admin: number; goal: number; disabled: number };
+export const USER_COLS = "id, name, email, is_admin, goal, disabled";
 
 const DAY = 24 * 3600 * 1000;
 
@@ -97,17 +121,19 @@ export const consumeLink = db.transaction((token: string): User | null => {
   if (!row || row.used_at || row.expires_at < now()) return null;
   db.prepare(`UPDATE tokens SET used_at = ? WHERE token_hash = ?`).run(now(), row.token_hash);
   if (row.kind === "login") {
-    return (db.prepare(`SELECT id, name, is_admin, goal FROM users WHERE id = ?`).get(row.user_id) as User) ?? null;
+    const u = db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(row.user_id) as User | undefined;
+    return u && !u.disabled ? u : null;
   }
   const info = db
     .prepare(`INSERT INTO users (name, is_admin, created_at) VALUES (?, ?, ?)`)
     .run(row.name || "Пользователь", row.is_admin, now());
-  return db.prepare(`SELECT id, name, is_admin, goal FROM users WHERE id = ?`).get(info.lastInsertRowid) as User;
+  return db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(info.lastInsertRowid) as User;
 });
 
 export function createSession(userId: number): string {
   const token = newToken();
   db.prepare(`INSERT INTO sessions (token_hash, user_id, created_at, last_seen) VALUES (?, ?, ?, ?)`).run(hash(token), userId, now(), now());
+  db.prepare(`UPDATE users SET last_login_at = ? WHERE id = ?`).run(now(), userId);
   return token;
 }
 
@@ -115,7 +141,7 @@ export function userBySession(token: string | undefined): User | null {
   if (!token) return null;
   const h = hash(token);
   const u = db
-    .prepare(`SELECT u.id, u.name, u.is_admin, u.goal FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`)
+    .prepare(`SELECT u.id, u.name, u.email, u.is_admin, u.goal, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.disabled = 0`)
     .get(h) as User | undefined;
   if (u) db.prepare(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`).run(now(), h);
   return u ?? null;

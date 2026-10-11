@@ -8,6 +8,8 @@ import {
   getDays, putDay, takeUsage, setSetting,
 } from "./db.js";
 import { estimate, llmConfig, testConnection } from "./llm.js";
+import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail } from "./auth.js";
+import { sendCode, sendInvite, mailConfigured } from "./mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
@@ -34,7 +36,7 @@ declare module "fastify" { interface FastifyRequest { user: User } }
 
 async function requireUser(req: FastifyRequest, reply: FastifyReply) {
   const u = userBySession(req.cookies[SID]);
-  if (!u) return reply.code(401).send({ error: "Нужно войти по ссылке-приглашению" });
+  if (!u) return reply.code(401).send({ error: "Нужно войти" });
   req.user = u;
 }
 
@@ -54,12 +56,55 @@ app.get<{ Params: { token: string } }>("/i/:token", async (req, reply) => {
 
 app.get("/healthz", async () => ({ ok: true }));
 
+/* ---------- email sign-in: request a 6-digit code, then verify it ---------- */
+const authFail = (reply: FastifyReply, e: any) => {
+  if (e instanceof AuthError) {
+    if (e.retryAfter) reply.header("retry-after", String(e.retryAfter));
+    return reply.code(e.statusCode).send({ error: e.message, retryAfter: e.retryAfter });
+  }
+  throw e;
+};
+
+app.post<{ Body: { email?: string } }>("/api/auth/request", async (req, reply) => {
+  const email = normEmail(req.body?.email);
+  if (!isEmail(email)) return reply.code(400).send({ error: "Проверь адрес почты" });
+  const current = userBySession(req.cookies[SID]);
+  const attachTo = current && !current.email ? current : null;
+  try {
+    ipLimit(req.ip);
+    checkAllowed(email, attachTo);
+    const code = issueCode(email);
+    await sendCode(email, code);
+  } catch (e: any) {
+    if (e instanceof AuthError) return authFail(reply, e);
+    req.log.error({ err: e?.message }, "send code failed");
+    return reply.code(502).send({ error: "Не удалось отправить письмо. Попробуй ещё раз чуть позже." });
+  }
+  return { ok: true, resendIn: 60 };
+});
+
+app.post<{ Body: { email?: string; code?: string } }>("/api/auth/verify", async (req, reply) => {
+  const email = normEmail(req.body?.email);
+  const code = String(req.body?.code ?? "").replace(/\D/g, "");
+  if (!isEmail(email) || code.length !== 6) return reply.code(400).send({ error: "Введи 6 цифр из письма" });
+  const current = userBySession(req.cookies[SID]);
+  const attachTo = current && !current.email ? current : null;
+  try {
+    checkCode(email, code);
+    const user = completeSignIn(email, attachTo);
+    if (!attachTo) setSession(reply, user.id);
+    req.log.info({ user: user.id, attached: !!attachTo }, "email sign-in");
+    return { ok: true };
+  } catch (e) { return authFail(reply, e); }
+});
+
 /* ---------- API (everything below requires a session) ---------- */
 app.register(async (api) => {
   api.addHook("preHandler", requireUser);
 
   api.get("/me", async (req) => ({
-    name: req.user.name, isAdmin: !!req.user.is_admin, goal: req.user.goal, dailyLimit: DAILY_LIMIT,
+    name: req.user.name, email: req.user.email, isAdmin: !!req.user.is_admin, goal: req.user.goal, dailyLimit: DAILY_LIMIT,
+    mailConfigured: mailConfigured(),
   }));
 
   api.put<{ Body: { goal?: number; name?: string } }>("/me", async (req, reply) => {
@@ -114,12 +159,55 @@ app.register(async (api) => {
   // link to sign in on another device (15 min, one use)
   api.post("/login-link", async (req) => ({ url: linkUrl(createLink({ kind: "login", userId: req.user.id })) }));
 
-  // admins invite new people (7 days, one use)
-  api.post<{ Body: { name?: string } }>("/invites", async (req, reply) => {
+  // admins invite by email (the person then signs in with a code) or by one-time link (7 days)
+  api.post<{ Body: { email?: string; name?: string } }>("/invites", async (req, reply) => {
     if (!req.user.is_admin) return reply.code(403).send({ error: "Приглашать могут только администраторы" });
+    const raw = (req.body?.email || "").trim();
+    if (raw) {
+      const email = normEmail(raw);
+      if (!isEmail(email)) return reply.code(400).send({ error: "Проверь адрес почты" });
+      if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return reply.code(409).send({ error: "Этот человек уже пользуется дневником" });
+      inviteEmail(email, req.user.id);
+      let sent = false;
+      try { await sendInvite(email, BASE_URL, req.user.name); sent = mailConfigured(); }
+      catch (e: any) { req.log.warn({ err: e?.message }, "invite mail failed"); }
+      return { email, sent, url: BASE_URL };
+    }
     const name = (req.body?.name || "").trim().slice(0, 60);
-    if (!name) return reply.code(400).send({ error: "Укажи имя" });
+    if (!name) return reply.code(400).send({ error: "Укажи email" });
     return { url: linkUrl(createLink({ kind: "invite", name, createdBy: req.user.id })) };
+  });
+
+  /* ---- people (admins only) ---- */
+  api.get("/users", async (req, reply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Только для администраторов" });
+    const users = db.prepare(
+      `SELECT id, name, email, is_admin AS isAdmin, disabled, created_at AS createdAt, last_login_at AS lastLoginAt,
+              (SELECT MAX(last_seen) FROM sessions WHERE user_id = users.id) AS lastSeen
+       FROM users ORDER BY created_at`
+    ).all();
+    const invites = db.prepare(`SELECT email, created_at AS createdAt FROM email_invites ORDER BY created_at DESC`).all();
+    return { users, invites, me: req.user.id };
+  });
+
+  api.put<{ Params: { id: string }; Body: { disabled?: boolean; isAdmin?: boolean } }>("/users/:id", async (req, reply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Только для администраторов" });
+    const id = Number(req.params.id);
+    if (id === req.user.id) return reply.code(400).send({ error: "Свой аккаунт так менять нельзя" });
+    if (!db.prepare(`SELECT 1 FROM users WHERE id = ?`).get(id)) return reply.code(404).send({ error: "Нет такого пользователя" });
+    if (typeof req.body?.disabled === "boolean") {
+      db.prepare(`UPDATE users SET disabled = ? WHERE id = ?`).run(req.body.disabled ? 1 : 0, id);
+      if (req.body.disabled) db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(id); // sign out everywhere
+    }
+    if (typeof req.body?.isAdmin === "boolean") db.prepare(`UPDATE users SET is_admin = ? WHERE id = ?`).run(req.body.isAdmin ? 1 : 0, id);
+    req.log.info({ by: req.user.id, target: id, change: req.body }, "user updated");
+    return { ok: true };
+  });
+
+  api.delete<{ Params: { email: string } }>("/invites/:email", async (req, reply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Только для администраторов" });
+    db.prepare(`DELETE FROM email_invites WHERE email = ?`).run(normEmail(req.params.email));
+    return { ok: true };
   });
 
   /* ---- model settings (admins only). The key is write-only: only its last 4 chars come back. ---- */
@@ -178,7 +266,11 @@ app.register(async (api) => {
 const { n } = db.prepare(`SELECT COUNT(*) AS n FROM users`).get() as { n: number };
 if (n === 0) {
   const url = linkUrl(createLink({ kind: "invite", name: "Администратор", isAdmin: true }));
-  app.log.info(`\n\n  Пользователей ещё нет. Ссылка администратора (действует 7 дней):\n  ${url}\n`);
+  app.log.info(
+    `\n\n  Пользователей ещё нет. Первый, кто войдёт по email${process.env.ADMIN_EMAIL ? ` (${process.env.ADMIN_EMAIL})` : ""}, станет администратором.` +
+    `\n  Или откройте ссылку администратора (7 дней): ${url}\n` +
+    (mailConfigured() ? "" : "  Почта (SMTP) не настроена: коды входа будут печататься в этот лог.\n")
+  );
 }
 
 await app.listen({ port: PORT, host: "0.0.0.0" });

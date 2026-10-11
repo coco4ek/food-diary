@@ -18,11 +18,13 @@
     "@fastify/cookie": "11.0.2",
     "@fastify/static": "10.1.6",
     "better-sqlite3": "11.8.1",
-    "fastify": "5.12.5"
+    "fastify": "5.12.5",
+    "nodemailer": "10.0.10"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.12",
     "@types/node": "22.13.1",
+    "@types/nodemailer": "8.0.2",
     "typescript": "5.7.3"
   }
 }

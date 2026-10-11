@@ -18,7 +18,7 @@ async function api(path,opts={}){
   const res=await fetch("/api"+path,{credentials:"same-origin",headers:opts.body?{"content-type":"application/json"}:{},...opts,body:opts.body?JSON.stringify(opts.body):undefined});
   if(res.status===401){showLogin();throw Object.assign(new Error("Нужно войти"),{code:401})}
   const data=await res.json().catch(()=>({}));
-  if(!res.ok)throw Object.assign(new Error(data.error||("Ошибка "+res.status)),{code:res.status});
+  if(!res.ok)throw Object.assign(new Error(data.error||("Ошибка "+res.status)),{code:res.status,data});
   return data;
 }
 let me=null;
@@ -243,24 +243,116 @@ $("photo").onchange=async()=>{
 };
 let goalT;$("goal").oninput=()=>{const v=+$("goal").value;if(v>=800&&v<=6000){goal=v;renderDay();clearTimeout(goalT);goalT=setTimeout(()=>{renderWeek();api("/me",{method:"PUT",body:{goal}}).catch(e=>showMsg(e.message,true))},600)}};
 
-/* ---------- account ---------- */
+/* ---------- sign-in by email code ---------- */
+function loginMsg(t,err){const m=$("loginMsg");m.hidden=!t;m.textContent=t||"";m.classList.toggle("err",!!err)}
 function showLogin(){
   $("app").hidden=true;$("login").hidden=false;
-  if(new URLSearchParams(location.search).get("link")==="invalid")$("loginMsg").textContent="Ссылка недействительна: она уже использована или устарела. Попроси новую.";
+  if(new URLSearchParams(location.search).get("link")==="invalid")loginMsg("Ссылка недействительна: она уже использована или устарела. Войди по почте.",true);
+  try{const last=localStorage.getItem("kcal:email");if(last&&!$("lEmail").value)$("lEmail").value=last}catch(e){}
+  setTimeout(()=>($("emailForm").hidden?$("lCode"):$("lEmail")).focus(),50);
 }
+let resendT=null;
+function startResend(sec){
+  clearInterval(resendT);const b=$("lResend");let left=sec;b.disabled=true;
+  const tick=()=>{if(left<=0){clearInterval(resendT);b.disabled=false;b.textContent="Отправить ещё раз";return}b.textContent=`Ещё раз через ${left} с`;left--};
+  tick();resendT=setInterval(tick,1000);
+}
+async function requestCode(){
+  const email=$("lEmail").value.trim();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){loginMsg("Проверь адрес почты",true);$("lEmail").focus();return false}
+  $("lSend").disabled=true;loginMsg("");
+  try{
+    const r=await api("/auth/request",{method:"POST",body:{email}});
+    try{localStorage.setItem("kcal:email",email)}catch(e){}
+    $("lTo").textContent=email;$("emailForm").hidden=true;$("codeForm").hidden=false;$("lCode").value="";$("lCode").focus();
+    startResend(r.resendIn||60);return true;
+  }catch(e){
+    if(e.code===429&&e.data&&e.data.retryAfter&&!$("codeForm").hidden)startResend(e.data.retryAfter);
+    loginMsg(e.message,true);return false;
+  }finally{$("lSend").disabled=false}
+}
+$("emailForm").onsubmit=ev=>{ev.preventDefault();requestCode()};
+$("lResend").onclick=()=>requestCode();
+$("lBack").onclick=()=>{$("codeForm").hidden=true;$("emailForm").hidden=false;loginMsg("");$("lEmail").focus()};
+$("lCode").addEventListener("input",()=>{const v=$("lCode").value.replace(/\D/g,"").slice(0,6);$("lCode").value=v;if(v.length===6)$("codeForm").requestSubmit()});
+$("codeForm").onsubmit=async ev=>{
+  ev.preventDefault();const code=$("lCode").value;if(code.length!==6){loginMsg("Введи 6 цифр из письма",true);return}
+  $("lVerify").disabled=true;loginMsg("Проверяю…");
+  try{await api("/auth/verify",{method:"POST",body:{email:$("lTo").textContent,code}});location.replace("/")}
+  catch(e){loginMsg(e.message,true);$("lCode").select()}finally{$("lVerify").disabled=false}
+};
+
+/* ---------- account ---------- */
 function showLink(url,label){
   const box=$("linkBox");box.hidden=false;$("linkLabel").textContent=label;$("linkUrl").value=url;$("linkUrl").select();
 }
 $("copyLink").onclick=async()=>{try{await navigator.clipboard.writeText($("linkUrl").value);$("copyLink").textContent="Скопировано"}catch(e){$("linkUrl").select()}setTimeout(()=>$("copyLink").textContent="Копировать",1500)};
 $("deviceLink").onclick=async()=>{try{const {url}=await api("/login-link",{method:"POST"});showLink(url,"Открой эту ссылку на другом устройстве в течение 15 минут. Сработает один раз.")}catch(e){showMsg(e.message,true)}};
-$("inviteBtn").onclick=async()=>{const name=$("inviteName").value.trim();if(!name){$("inviteName").focus();return}
-  try{const {url}=await api("/invites",{method:"POST",body:{name}});$("inviteName").value="";showLink(url,`Ссылка для «${name}». Действует 7 дней, сработает один раз.`)}catch(e){showMsg(e.message,true)}};
 $("logout").onclick=async()=>{try{await api("/logout",{method:"POST"})}catch(e){}location.href="/"};
+function renderAccount(){
+  $("who").textContent=me.name;
+  $("whoEmail").textContent=me.email?`Вход по почте ${me.email}`:"";
+  $("attachForm").hidden=!!me.email;
+}
+// accounts made by invite links can attach an email
+$("attachForm").onsubmit=async ev=>{
+  ev.preventDefault();const email=$("aEmail").value.trim();if(!email)return;
+  try{await api("/auth/request",{method:"POST",body:{email}});$("aCodeRow").hidden=false;$("aCode").focus();sMsgA("Код отправлен на "+email)}
+  catch(e){sMsgA(e.message,true)}
+};
+$("aVerify").onclick=async()=>{
+  try{await api("/auth/verify",{method:"POST",body:{email:$("aEmail").value.trim(),code:$("aCode").value}});
+    me=await api("/me");renderAccount();sMsgA("")}
+  catch(e){sMsgA(e.message,true)}
+};
+function sMsgA(t,err){const m=$("attachForm").querySelector(".msg");m.textContent=t||"Привяжи почту, чтобы входить с любого устройства по коду.";m.classList.toggle("err",!!err)}
+
+/* ---------- people (admins) ---------- */
+const ago=ts=>{if(!ts)return"ещё не заходил";const m=Math.round((Date.now()-ts)/60000);if(m<2)return"только что";if(m<60)return m+" мин назад";const h=Math.round(m/60);if(h<24)return h+" ч назад";const d=Math.round(h/24);return d<30?d+" дн назад":new Date(ts).toLocaleDateString("ru-RU")};
+function iMsg(t,kind){const m=$("inviteMsg");m.hidden=!t;m.textContent=t||"";m.className="msg"+(kind?" "+kind:"")}
+async function loadPeople(){
+  let data;try{data=await api("/users")}catch(e){iMsg(e.message,"err");return}
+  $("peopleCount").textContent=data.users.length+" чел.";
+  const ul=$("userList");ul.innerHTML="";
+  for(const u of data.users){
+    const r=el("div","urow"+(u.disabled?" off":""));const w=el("div","who");
+    const n=el("b",null,u.name);w.append(n);
+    if(u.isAdmin)w.append(el("span","tag adm","админ"));
+    if(u.disabled)w.append(el("span","tag off","заблокирован"));
+    if(u.id===data.me)w.append(el("span","tag","это ты"));
+    w.append(el("small",null,`${u.email||"без почты"} · ${ago(u.lastSeen||u.lastLoginAt)}`));
+    const acts=el("div","acts");
+    if(u.id!==data.me){
+      const adm=el("button","ghost",u.isAdmin?"Снять админа":"Сделать админом");adm.onclick=()=>setUser(u.id,{isAdmin:!u.isAdmin});
+      const blk=el("button","ghost"+(u.disabled?"":" danger"),u.disabled?"Разблокировать":"Заблокировать");
+      blk.onclick=()=>{if(!u.disabled&&!blk.dataset.armed){blk.dataset.armed=1;blk.textContent="Точно?";setTimeout(()=>{delete blk.dataset.armed;blk.textContent="Заблокировать"},4000);return}setUser(u.id,{disabled:!u.disabled})};
+      acts.append(adm,blk);
+    }
+    r.append(w,acts);ul.append(r);
+  }
+  const il=$("inviteList");il.innerHTML="";
+  if(data.invites.length){
+    il.append(el("h4",null,"Ждут первого входа"));
+    for(const i of data.invites){
+      const r=el("div","urow"),w=el("div","who");w.append(el("b",null,i.email),el("small",null,"приглашён "+ago(i.createdAt)));
+      const x=el("button","ghost","Отозвать");x.onclick=async()=>{try{await api("/invites/"+encodeURIComponent(i.email),{method:"DELETE"});loadPeople()}catch(e){iMsg(e.message,"err")}};
+      const acts=el("div","acts");acts.append(x);r.append(w,acts);il.append(r);
+    }
+  }
+}
+async function setUser(id,body){try{await api("/users/"+id,{method:"PUT",body});loadPeople()}catch(e){iMsg(e.message,"err")}}
+$("inviteForm").onsubmit=async ev=>{
+  ev.preventDefault();const email=$("inviteEmail").value.trim();if(!email){$("inviteEmail").focus();return}
+  $("inviteBtn").disabled=true;
+  try{const r=await api("/invites",{method:"POST",body:{email}});$("inviteEmail").value="";
+    iMsg(r.sent?`Приглашение отправлено на ${r.email}. Он войдёт по коду из письма.`:`${r.email} может входить: пусть откроет ${r.url} и введёт эту почту. Письмо не отправлено — почта на сервере не настроена.`,"ok");loadPeople()}
+  catch(e){iMsg(e.message,"err")}finally{$("inviteBtn").disabled=false}
+};
 
 /* ---------- settings panel ---------- */
 function toggleSettings(open){
   const p=$("settings");open=open??p.hidden;p.hidden=!open;$("gear").setAttribute("aria-expanded",open);
-  if(open){if(me&&me.isAdmin)loadModel();p.scrollIntoView({behavior:"smooth",block:"start"})}
+  if(open){if(me&&me.isAdmin){loadModel();loadPeople()}p.scrollIntoView({behavior:"smooth",block:"start"})}
 }
 $("gear").onclick=()=>toggleSettings();
 $("closeSettings").onclick=()=>toggleSettings(false);
@@ -296,7 +388,7 @@ $("sClearKey").onclick=async()=>{
   try{me=await api("/me")}catch(e){if(e.code!==401){$("app").hidden=false;showMsg("Сервер недоступен: "+e.message,true)}return}
   if(location.search)history.replaceState(null,"","/");
   goal=me.goal;$("goal").value=goal;
-  $("who").textContent=me.name;$("adminBox").hidden=!me.isAdmin;$("modelForm").hidden=!me.isAdmin;
+  renderAccount();$("people").hidden=!me.isAdmin;$("modelForm").hidden=!me.isAdmin;
   $("app").hidden=false;
   await openDay();
 })();

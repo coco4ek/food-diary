@@ -164,7 +164,6 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .txt{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:8px 14px}
 .account .row b{font-weight:600}
 .linkbox{display:flex;flex-direction:column;gap:8px}
-.login{min-height:80vh;justify-content:center}
 .login h1{font-family:var(--display);font-weight:700;font-size:clamp(26px,7vw,38px);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.02em}
 .login p{margin:0;max-width:52ch}
 
@@ -185,15 +184,61 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .pill.bad{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
 .danger{color:var(--warn)}
 .msg.ok{color:var(--c)}
+
+.lhero{display:flex;flex-direction:column;gap:8px}
+.lcard{max-width:420px;width:100%}
+.txt.big{font-size:17px;padding:12px 16px;border-radius:12px}
+.txt.code{letter-spacing:.4em;font-weight:700;text-align:center;font-size:24px}
+.btn.wide{width:100%;padding:13px 18px;font-size:16px}
+.hint{color:var(--muted);font-size:12.5px}
+.sent{margin:0;font-size:14px;overflow-wrap:anywhere}
+.linkbtn{border:none;background:none;padding:4px 0;color:var(--accent);font-weight:600;font-size:13.5px}
+.linkbtn:disabled{color:var(--muted);cursor:default}
+.login{min-height:85vh;justify-content:center}
+.attach{display:flex;flex-direction:column;gap:8px}
+.ulist{display:flex;flex-direction:column}
+.urow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-top:1px solid var(--line);align-items:center}
+.urow .who{min-width:0}
+.urow .who b{font-weight:600}
+.urow .who small{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.urow .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.urow .acts button{font-size:12px;padding:5px 10px}
+.urow.off .who{opacity:.55}
+.tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--muted);margin-left:6px;vertical-align:1px}
+.tag.adm{background:color-mix(in srgb,var(--p) 16%,transparent);color:var(--p)}
+.tag.off{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.ulist h4{margin:14px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+@media (max-width:440px){.urow{grid-template-columns:1fr}.urow .acts{justify-content:flex-start}}
 </style>
 </head>
 <body>
-<div class="wrap login" id="login" hidden>
+<main class="wrap login" id="login" hidden>
   <div class="brand">ккал·дневник</div>
-  <h1>Дневник калорий по фото</h1>
-  <p>Сфотографируй тарелку — блюда, граммы, калории и БЖУ посчитаются сами.</p>
-  <p class="msg" id="loginMsg">Вход только по приглашению. Попроси ссылку у администратора, а если ты уже пользуешься дневником на другом устройстве, открой там «Войти на другом устройстве».</p>
-</div>
+  <div class="lhero">
+    <h1>Дневник калорий по фото</h1>
+    <p>Сфотографируй тарелку, а блюда, граммы, калории и БЖУ посчитаются сами.</p>
+  </div>
+  <form class="card lcard" id="emailForm" novalidate>
+    <label class="fld" for="lEmail"><span>Почта</span>
+      <input id="lEmail" class="txt big" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" required>
+    </label>
+    <button class="btn wide" id="lSend" type="submit">Получить код</button>
+    <small class="hint">Вход только по приглашению. Код придёт на почту, пароль не нужен.</small>
+  </form>
+  <form class="card lcard" id="codeForm" hidden novalidate>
+    <p class="sent">Код отправлен на <b id="lTo"></b></p>
+    <label class="fld" for="lCode"><span>Код из письма</span>
+      <input id="lCode" class="txt big code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required>
+    </label>
+    <button class="btn wide" id="lVerify" type="submit">Войти</button>
+    <div class="row">
+      <button type="button" class="linkbtn" id="lBack">Другая почта</button>
+      <span class="spacer"></span>
+      <button type="button" class="linkbtn" id="lResend" disabled>Отправить ещё раз</button>
+    </div>
+  </form>
+  <p class="msg" id="loginMsg" hidden></p>
+</main>
 <div class="wrap" id="app" hidden>
   <header class="top">
     <div class="brand">ккал·дневник</div>
@@ -209,20 +254,33 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
     <div class="shead"><h2>Настройки</h2><button class="ghost" id="closeSettings">Готово</button></div>
 <div class="card account">
     <div class="row"><span class="label">Аккаунт</span><span class="spacer"></span><b id="who"></b></div>
+    <div class="msg" id="whoEmail"></div>
+    <form id="attachForm" class="attach" hidden novalidate>
+      <div class="msg">Привяжи почту, чтобы входить с любого устройства по коду.</div>
+      <div class="row"><input id="aEmail" class="txt" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Почта"><button class="ghost" id="aSend" type="submit">Получить код</button></div>
+      <div class="row" id="aCodeRow" hidden><input id="aCode" class="txt" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма" aria-label="Код из письма"><button class="btn" id="aVerify" type="button">Привязать</button></div>
+    </form>
     <div class="row">
       <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
       <span class="spacer"></span>
       <button class="ghost" id="logout">Выйти</button>
     </div>
-    <div class="row" id="adminBox" hidden>
-      <input id="inviteName" class="txt" placeholder="Имя нового участника" aria-label="Имя нового участника">
-      <button class="btn" id="inviteBtn">Пригласить</button>
-    </div>
+
     <div id="linkBox" class="linkbox" hidden>
       <div class="msg" id="linkLabel"></div>
       <div class="row"><input id="linkUrl" class="txt" readonly aria-label="Ссылка"><button class="ghost" id="copyLink">Копировать</button></div>
     </div>
   </div>
+    <section class="card" id="people" hidden aria-label="Люди">
+      <div class="row"><span class="label">Люди</span><span class="spacer"></span><span class="pill" id="peopleCount"></span></div>
+      <form class="row" id="inviteForm" novalidate>
+        <input id="inviteEmail" class="txt" type="email" inputmode="email" placeholder="Почта нового участника" aria-label="Почта нового участника">
+        <button class="btn" id="inviteBtn" type="submit">Пригласить</button>
+      </form>
+      <div class="msg" id="inviteMsg" hidden></div>
+      <div id="userList" class="ulist"></div>
+      <div id="inviteList" class="ulist"></div>
+    </section>
     <form class="card" id="modelForm" hidden>
       <div class="row"><span class="label">Модель распознавания</span><span class="spacer"></span><span class="pill" id="keyState"></span></div>
       <label class="fld" for="sKey"><span>API-ключ</span>
