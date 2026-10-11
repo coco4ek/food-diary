@@ -1,9 +1,15 @@
 // Food recognition through any OpenAI-compatible Chat Completions API
 // (OpenRouter, OpenAI, Gemini's OpenAI endpoint, local gateways, etc.)
 
-const BASE = (process.env.LLM_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+const BASE = (process.env.LLM_BASE_URL || "https://api.z.ai/api/paas/v4").replace(/\/+$/, "");
 const KEY = process.env.LLM_API_KEY || "";
-const MODEL = process.env.LLM_MODEL || "anthropic/claude-sonnet-4.5";
+const MODEL = process.env.LLM_MODEL || "glm-4.6v";
+const MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 6000);
+// Provider-specific request fields as JSON, merged into the body.
+// For z.ai GLM, e.g. {"thinking":{"type":"disabled"}} for faster, cheaper answers.
+let EXTRA: Record<string, unknown> = {};
+try { EXTRA = process.env.LLM_EXTRA_BODY ? JSON.parse(process.env.LLM_EXTRA_BODY) : {}; }
+catch { console.error("LLM_EXTRA_BODY is not valid JSON — ignored"); }
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 90_000);
 
 export type Ingredient = { name: string; grams: number; kcal: number; protein: number; fat: number; carbs: number };
@@ -72,8 +78,9 @@ export async function estimate(text: string, images: string[]): Promise<Estimate
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
-        max_tokens: 3000,
+        max_tokens: MAX_TOKENS,
         messages: [{ role: "user", content }],
+        ...EXTRA,
       }),
     });
     const body: any = await res.json().catch(() => ({}));
