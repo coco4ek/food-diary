@@ -8,7 +8,7 @@ services:
       DB_PATH: /app/data/kkal.sqlite
     volumes:
       - ./data:/app/data
-    # Port is open only on localhost: Caddy (or nginx) on the same server proxies to it.
-    # If your Caddy runs in Docker, remove "ports" and join its network instead (see README).
+    # Open only on localhost: nginx/Caddy on the same machine proxies to it.
+    # Change 3010 if that port is taken on your server.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3010:3000"

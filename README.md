@@ -26,13 +26,40 @@ docker compose up -d --build
 
 Если почта ещё не настроена, код выводится в лог: `docker compose logs kkal | grep -A3 "Кому:"`. Ещё в лог при первом запуске пишется одноразовая ссылка администратора, на случай если почты нет совсем.
 
+### HTTPS через nginx
+
+Создайте `/etc/nginx/sites-available/diary.example.com`:
+
+```nginx
+server {
+    listen 80;
+    server_name diary.example.com;
+
+    client_max_body_size 20m;     # фото; без этого — ошибка 413
+    proxy_read_timeout 120s;      # распознавание может идти до 1,5 мин
+
+    location / {
+        proxy_pass http://127.0.0.1:3010;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/diary.example.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d diary.example.com
+```
+
 ### HTTPS через Caddy
 
 Установка на телефон и безопасная cookie сессии работают только по HTTPS. Если Caddy установлен прямо на сервере, добавьте в `Caddyfile`:
 
 ```
 kkal.example.com {
-    reverse_proxy 127.0.0.1:3000
+    reverse_proxy 127.0.0.1:3010
 }
 ```
 
@@ -75,10 +102,10 @@ kkal.example.com {
 **Без почты.** Ссылки входа тоже работают. Кнопка «Войти на другом устройстве» выдаёт ссылку на 15 минут, а консольные команды ниже создают ссылки-приглашения.
 
 ```bash
-docker compose exec kkal node dist/cli.js invite "Маша"           # обычный участник
-docker compose exec kkal node dist/cli.js invite "Саша" --admin   # администратор
-docker compose exec kkal node dist/cli.js users                    # список
-docker compose exec kkal node dist/cli.js login 2                  # ссылка входа для пользователя с id 2
+docker compose exec -u node kkal node dist/cli.js invite "Маша"           # обычный участник
+docker compose exec -u node kkal node dist/cli.js invite "Саша" --admin   # администратор
+docker compose exec -u node kkal node dist/cli.js users                    # список
+docker compose exec -u node kkal node dist/cli.js login 2                  # ссылка входа для пользователя с id 2
 ```
 
 ## Установка на телефон
@@ -119,7 +146,7 @@ docker compose exec kkal node dist/cli.js login 2                  # ссылк�
 Все данные лежат в одном файле `data/kkal.sqlite`. Копировать его на ходу можно так:
 
 ```bash
-docker compose exec kkal node -e "require('better-sqlite3')('/app/data/kkal.sqlite').backup('/app/data/backup.sqlite').then(()=>console.log('ok'))"
+docker compose exec -u node kkal node -e "require('better-sqlite3')('/app/data/kkal.sqlite').backup('/app/data/backup.sqlite').then(()=>console.log('ok'))"
 ```
 
 ## Обновление
