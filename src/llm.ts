@@ -100,7 +100,10 @@ async function chat(content: any[], maxTokens?: number): Promise<string> {
     return Array.isArray(reply) ? reply.map((p: any) => p?.text ?? "").join("") : String(reply ?? "");
   } catch (e: any) {
     if (e?.name === "AbortError") throw Object.assign(new Error(`Модель не ответила за ${Math.round(cfg.timeoutMs / 1000)} с. Попробуй ещё раз или отключи «размышления» в настройках.`), { statusCode: 504 });
-    if (e?.cause?.code) e = Object.assign(new Error(`Не удалось связаться с API (${e.cause.code}). Проверь адрес.`), { statusCode: 502 });
+    const code = e?.cause?.code || e?.code;
+    if (["ENOTFOUND", "ECONNREFUSED", "EAI_AGAIN", "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT"].includes(code))
+      e = Object.assign(new Error(`Не удалось связаться с API модели (${code}). Проверь адрес в настройках.`), { statusCode: 502 });
+    else if (code) e = Object.assign(new Error("Связь с моделью оборвалась. Попробуй ещё раз."), { statusCode: 502 });
     if (!e.statusCode) e.statusCode = 502;
     throw e;
   } finally {

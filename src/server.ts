@@ -130,7 +130,7 @@ app.register(async (api) => {
   });
 
   api.put<{ Params: { date: string }; Body: { entries: unknown } }>("/days/:date", async (req, reply) => {
-    const { date } = req.params;
+    const date = req.params.date.replace(/^day-/, ""); // early app versions sent "day-YYYY-MM-DD"
     const entries = req.body?.entries;
     if (!DATE.test(date) || !Array.isArray(entries)) return reply.code(400).send({ error: "Неверные данные дня" });
     const size = JSON.stringify(entries).length;

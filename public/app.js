@@ -27,10 +27,29 @@ async function api(path,opts={}){
   return data;
 }
 let me=null;
+/* Days that failed to save stay here and are retried on demand, when the network returns,
+   and when the app comes back to the foreground. Always the latest version of the day is sent. */
+const unsaved=new Set();
 async function store(k,v){
-  try{await api("/days/"+k,{method:"PUT",body:v});}
-  catch(e){showMsg("Не удалось сохранить: "+e.message+". Проверь интернет и повтори.",true)}
+  try{await api("/days/"+k,{method:"PUT",body:v});unsaved.delete(k)}
+  catch(e){
+    if(e.code===401)return;
+    unsaved.add(k);
+    const net=!e.code||e.code>=500;
+    toast(net?"Не сохранилось: нет связи с сервером. Запись не потеряна.":"Не сохранилось: "+e.message,true,{label:"Повторить",fn:flushUnsaved});
+  }
 }
+let flushing=false;
+async function flushUnsaved(){
+  if(flushing||!unsaved.size)return;flushing=true;
+  try{for(const k of [...unsaved]){if(cache[k])await api("/days/"+k,{method:"PUT",body:{entries:cache[k].entries}});unsaved.delete(k)}
+    toast("Сохранено")}
+  catch(e){toast("Всё ещё нет связи. Попробую сам, когда она появится.",true,{label:"Повторить",fn:flushUnsaved})}
+  finally{flushing=false}
+}
+window.addEventListener("online",()=>flushUnsaved());
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")flushUnsaved()});
+window.addEventListener("beforeunload",e=>{if(unsaved.size){e.preventDefault();e.returnValue=""}});
 async function prefetch(from,to){
   const missing=[];for(let d=new Date(from);key(d)<=key(to);d.setDate(d.getDate()+1))if(!(key(d) in cache))missing.push(key(d));
   if(!missing.length)return;
@@ -196,13 +215,18 @@ function renderDraft(){
   updTotal();
   $("note").hidden=!draftNote;$("note").textContent=draftNote;
 }
-function showMsg(t,err,working){
-  if(!sheetOpen()){if(t)toast(t,err);return}
-  const m=$("msg");m.hidden=!t;m.className=working?"working":"msg"+(err?" err":"");m.textContent="";
-  if(working){m.append(el("span","spin"),el("span",null,t))}else m.textContent=t||"";
+function showMsg(t,err,working,action){
+  if(!sheetOpen()){if(t)toast(t,err,action);return}
+  const m=$("msg");m.hidden=!t;m.className=working?"working":"msg"+(err?" err":"")+(action?" withact":"");m.textContent="";
+  if(working){m.append(el("span","spin"),el("span",null,t))}else m.append(el("span",null,t||""));
+  if(action&&t){const b=el("button","btn act",action.label);b.type="button";b.onclick=()=>{haptic();action.fn()};m.append(b)}
 }
 let toastT;
-function toast(t,err){const x=$("toast");x.textContent=t;x.classList.toggle("err",!!err);x.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>x.classList.remove("on"),err?4200:2400)}
+function toast(t,err,action){
+  const x=$("toast");x.textContent="";x.append(el("span",null,t));x.classList.toggle("err",!!err);x.classList.toggle("act",!!action);
+  if(action){const b=el("button",null,action.label);b.type="button";b.onclick=()=>{x.classList.remove("on");haptic();action.fn()};x.append(b)}
+  x.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>x.classList.remove("on"),action?9000:err?4200:2400);
+}
 const haptic=(ms=8)=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
 
 async function estimate(){
@@ -212,7 +236,7 @@ async function estimate(){
   const what=photos.length?"Смотрю на фото и считаю":"Считаю",t0=Date.now();
   const tick=()=>{const s=Math.round((Date.now()-t0)/1000);showMsg(s<5?what+"…":`${what}… ${s} с${s>40?" — модель думает, это нормально":""}`,false,true)};tick();const timer=setInterval(tick,1000);
   try{
-    const images=await Promise.all(photos.map(p=>toDataURL(p.blob)));
+    const images=await Promise.all(photos.map(async p=>p.data||(p.data=await toDataURL(p.blob))));
     const res=await api("/estimate",{method:"POST",timeout:((me&&me.llmTimeoutSec)||300)*1000+30000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
@@ -220,8 +244,10 @@ async function estimate(){
     draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();haptic(12);
     $("more").open=false;
   }catch(e){
-    if(e.code!==401)showMsg(e.message||String(e),true);
-    if(e.code===503&&me&&me.isAdmin){closeSheet();go("settings")}
+    if(e.code===503&&me&&me.isAdmin){closeSheet();go("settings");toast(e.message,true);return}
+    // everything is kept (photos, text, meal): one tap sends it again
+    const retry={label:"Повторить",fn:()=>{if(!sheetOpen())openSheet(photos.length?"photo":"text");estimate()}};
+    if(e.code!==401)showMsg(e.message||String(e),true,false,e.code===400||e.code===429?null:retry);
   }finally{clearInterval(timer);$("calc").disabled=false;$("shoot").classList.remove("busy")}
 }
 async function saveDraft(){ try{ await saveDraftInner() }catch(e){ console.error(e); showMsg("Не удалось добавить: "+(e.message||e),true) } }
@@ -235,7 +261,7 @@ async function saveDraftInner(){
   draft=[];draftNote="";$("text").value="";clearPhoto();renderDraft();showMsg("");
   closeSheet();go("diary");haptic(15);toast(`${ml}: +${kc} ккал`);
   renderDay();renderWeek();
-  await store("day-"+k,{entries:d.entries});
+  await store(k,{entries:d.entries});
 }
 async function mutate(eid,fn){
   const k=key(day); const d=await getDay(k);
@@ -245,7 +271,7 @@ async function mutate(eid,fn){
   if(!e.dishes.length)d.entries=d.entries.filter(x=>x!==e);
   if(e.dishes.length!==before)[...openSet].forEach(x=>x.startsWith(eid+":")&&openSet.delete(x));
   dayData=d;renderDay();renderWeek();
-  await store("day-"+k,{entries:d.entries});
+  await store(k,{entries:d.entries});
 }
 const removeDish=(eid,di)=>mutate(eid,e=>e.dishes.splice(di,1));
 const removeIng=(eid,di,ii)=>mutate(eid,e=>e.dishes[di].items.splice(ii,1));
