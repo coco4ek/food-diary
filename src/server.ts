@@ -221,6 +221,24 @@ app.register(async (api) => {
     return { ok: true };
   });
 
+  // delete a person for good: their diary, sessions and usage go too (ON DELETE CASCADE)
+  api.delete<{ Params: { id: string } }>("/users/:id", async (req, reply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Только для администраторов" });
+    const id = Number(req.params.id);
+    if (id === req.user.id) return reply.code(400).send({ error: "Себя удалить нельзя" });
+    const u = db.prepare(`SELECT id, email FROM users WHERE id = ?`).get(id) as { id: number; email: string | null } | undefined;
+    if (!u) return reply.code(404).send({ error: "Нет такого пользователя" });
+    db.transaction(() => {
+      db.prepare(`DELETE FROM users WHERE id = ?`).run(id);
+      if (u.email) {
+        db.prepare(`DELETE FROM email_codes WHERE email = ?`).run(u.email);
+        db.prepare(`DELETE FROM email_invites WHERE email = ?`).run(u.email);
+      }
+    })();
+    req.log.info({ by: req.user.id, deleted: id }, "user deleted");
+    return { ok: true };
+  });
+
   api.delete<{ Params: { email: string } }>("/invites/:email", async (req, reply) => {
     if (!req.user.is_admin) return reply.code(403).send({ error: "Только для администраторов" });
     db.prepare(`DELETE FROM email_invites WHERE email = ?`).run(normEmail(req.params.email));

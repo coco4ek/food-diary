@@ -556,7 +556,16 @@ async function loadPeople(){
       const adm=el("button","ghost",u.isAdmin?"Снять админа":"Сделать админом");adm.onclick=()=>setUser(u.id,{isAdmin:!u.isAdmin});
       const blk=el("button","ghost"+(u.disabled?"":" danger"),u.disabled?"Разблокировать":"Заблокировать");
       blk.onclick=()=>{if(!u.disabled&&!blk.dataset.armed){blk.dataset.armed=1;blk.textContent="Точно?";setTimeout(()=>{delete blk.dataset.armed;blk.textContent="Заблокировать"},4000);return}setUser(u.id,{disabled:!u.disabled})};
-      acts.append(adm,blk);
+      const del=el("button","ghost danger","Удалить");
+      del.onclick=async()=>{
+        if(!del.dataset.armed){del.dataset.armed=1;del.textContent="Удалить навсегда?";haptic();
+          iMsg(`Удаление ${u.email||u.name} сотрёт и весь дневник. Это нельзя отменить.`,"err");
+          setTimeout(()=>{if(del.dataset.armed){delete del.dataset.armed;del.textContent="Удалить"}},5000);return}
+        del.disabled=true;
+        try{await api("/users/"+u.id,{method:"DELETE"});haptic(15);iMsg(`${u.email||u.name} удалён(а).`,"ok");loadPeople()}
+        catch(e){iMsg(e.message,"err");del.disabled=false}
+      };
+      acts.append(adm,blk,del);
     }
     r.append(w,acts);ul.append(r);
   }
