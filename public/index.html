@@ -167,6 +167,24 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .login{min-height:80vh;justify-content:center}
 .login h1{font-family:var(--display);font-weight:700;font-size:clamp(26px,7vw,38px);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.02em}
 .login p{margin:0;max-width:52ch}
+
+#gear{margin-left:4px}
+#gear[aria-expanded="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.settings{display:flex;flex-direction:column;gap:12px;padding:14px;margin-inline:-14px;border-radius:calc(var(--r) + 4px);background:var(--soft)}
+.shead{display:flex;align-items:center;justify-content:space-between}
+.shead h2{margin:0;font-family:var(--display);font-weight:500;font-size:17px}
+.fld{display:flex;flex-direction:column;gap:6px}
+.fld>span:first-child{font-weight:600;font-size:13px}
+.fld small,.check small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.fld .txt{border-radius:10px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
+.check input{margin-top:3px;accent-color:var(--accent)}
+.check span{display:flex;flex-direction:column;gap:2px}
+.pill{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.pill.ok{background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c)}
+.pill.bad{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.danger{color:var(--warn)}
+.msg.ok{color:var(--c)}
 </style>
 </head>
 <body>
@@ -183,8 +201,53 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
       <button id="prev" aria-label="Предыдущий день">‹</button>
       <div class="d" id="dayLabel">Сегодня</div>
       <button id="next" aria-label="Следующий день">›</button>
+      <button id="gear" aria-label="Настройки" aria-expanded="false" aria-controls="settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </div>
   </header>
+
+  <section id="settings" class="settings" hidden aria-label="Настройки">
+    <div class="shead"><h2>Настройки</h2><button class="ghost" id="closeSettings">Готово</button></div>
+<div class="card account">
+    <div class="row"><span class="label">Аккаунт</span><span class="spacer"></span><b id="who"></b></div>
+    <div class="row">
+      <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
+      <span class="spacer"></span>
+      <button class="ghost" id="logout">Выйти</button>
+    </div>
+    <div class="row" id="adminBox" hidden>
+      <input id="inviteName" class="txt" placeholder="Имя нового участника" aria-label="Имя нового участника">
+      <button class="btn" id="inviteBtn">Пригласить</button>
+    </div>
+    <div id="linkBox" class="linkbox" hidden>
+      <div class="msg" id="linkLabel"></div>
+      <div class="row"><input id="linkUrl" class="txt" readonly aria-label="Ссылка"><button class="ghost" id="copyLink">Копировать</button></div>
+    </div>
+  </div>
+    <form class="card" id="modelForm" hidden>
+      <div class="row"><span class="label">Модель распознавания</span><span class="spacer"></span><span class="pill" id="keyState"></span></div>
+      <label class="fld" for="sKey"><span>API-ключ</span>
+        <span class="row"><input id="sKey" class="txt" type="password" autocomplete="off" spellcheck="false" placeholder="Вставь ключ"><button type="button" class="ghost" id="sShow">Показать</button></span>
+        <small id="keyHint"></small>
+      </label>
+      <label class="fld" for="sModel"><span>Модель</span>
+        <input id="sModel" class="txt" list="models" spellcheck="false">
+        <datalist id="models"><option value="glm-4.6v">основная</option><option value="glm-4.6v-flashx">дешевле и быстрее</option><option value="glm-4.6v-flash">бесплатная</option><option value="glm-5v-turbo">новейшая</option></datalist>
+        <small>Модель должна понимать фото.</small>
+      </label>
+      <label class="fld" for="sBase"><span>Адрес API</span>
+        <input id="sBase" class="txt" type="url" spellcheck="false" placeholder="https://api.z.ai/api/paas/v4">
+        <small>z.ai: https://api.z.ai/api/paas/v4 · OpenRouter: https://openrouter.ai/api/v1</small>
+      </label>
+      <label class="check" for="sThinking"><input type="checkbox" id="sThinking"> <span>Отключить «размышления» модели<small>Быстрее и дешевле, но иногда менее точно. Для GLM.</small></span></label>
+      <div class="row">
+        <button type="button" class="ghost" id="sTest">Проверить</button>
+        <button type="button" class="ghost danger" id="sClearKey" hidden>Удалить ключ</button>
+        <span class="spacer"></span>
+        <button type="submit" class="btn" id="sSave">Сохранить</button>
+      </div>
+      <div class="msg" id="sMsg" hidden></div>
+    </form>
+  </section>
 
   <section class="dial" aria-label="Итог дня">
     <div class="ring">
@@ -249,22 +312,7 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
     <div class="week" id="week"></div>
   </section>
 
-  <section class="card account" aria-label="Аккаунт">
-    <div class="row"><span class="label">Аккаунт</span><span class="spacer"></span><b id="who"></b></div>
-    <div class="row">
-      <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
-      <span class="spacer"></span>
-      <button class="ghost" id="logout">Выйти</button>
-    </div>
-    <div class="row" id="adminBox" hidden>
-      <input id="inviteName" class="txt" placeholder="Имя нового участника" aria-label="Имя нового участника">
-      <button class="btn" id="inviteBtn">Пригласить</button>
-    </div>
-    <div id="linkBox" class="linkbox" hidden>
-      <div class="msg" id="linkLabel"></div>
-      <div class="row"><input id="linkUrl" class="txt" readonly aria-label="Ссылка"><button class="ghost" id="copyLink">Копировать</button></div>
-    </div>
-  </section>
+  
 
   <p class="foot" id="foot">Оценки калорий приблизительные: Claude считает по типичным порциям и справочным значениям. По фото вес порции оценивается на глаз, поэтому проверяй граммы перед добавлением или уточняй словами.</p>
 </div>

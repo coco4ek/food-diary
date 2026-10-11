@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   db, User, createLink, consumeLink, createSession, userBySession, deleteSession,
-  getDays, putDay, takeUsage,
+  getDays, putDay, takeUsage, setSetting,
 } from "./db.js";
-import { estimate } from "./llm.js";
+import { estimate, llmConfig, testConnection } from "./llm.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
@@ -120,6 +120,50 @@ app.register(async (api) => {
     const name = (req.body?.name || "").trim().slice(0, 60);
     if (!name) return reply.code(400).send({ error: "Укажи имя" });
     return { url: linkUrl(createLink({ kind: "invite", name, createdBy: req.user.id })) };
+  });
+
+  /* ---- model settings (admins only). The key is write-only: only its last 4 chars come back. ---- */
+  const settingsView = () => {
+    const c = llmConfig();
+    return {
+      baseUrl: c.baseUrl, model: c.model, keySource: c.keySource,
+      keyHint: c.apiKey ? "••••" + c.apiKey.slice(-4) : "",
+      thinkingOff: (c.extra as any)?.thinking?.type === "disabled",
+    };
+  };
+  const adminOnly = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Настройки доступны только администраторам" });
+  };
+
+  api.get("/settings", { preHandler: adminOnly }, async () => settingsView());
+
+  api.put<{ Body: { baseUrl?: string; model?: string; apiKey?: string; clearKey?: boolean; thinkingOff?: boolean } }>(
+    "/settings", { preHandler: adminOnly }, async (req, reply) => {
+      const b = req.body || {};
+      if (typeof b.baseUrl === "string") {
+        const u = b.baseUrl.trim();
+        if (u && !/^https?:\/\/[^\s]+$/.test(u)) return reply.code(400).send({ error: "Адрес API должен начинаться с https://" });
+        setSetting("llm_base_url", u || null);
+      }
+      if (typeof b.model === "string") setSetting("llm_model", b.model.trim().slice(0, 120) || null);
+      if (b.clearKey) setSetting("llm_api_key", null);
+      else if (typeof b.apiKey === "string" && b.apiKey.trim()) {
+        const k = b.apiKey.trim();
+        if (k.length < 8 || k.length > 400 || /\s/.test(k)) return reply.code(400).send({ error: "Ключ выглядит неверно: без пробелов, от 8 символов" });
+        setSetting("llm_api_key", k);
+      }
+      if (typeof b.thinkingOff === "boolean") {
+        const extra: Record<string, unknown> = { ...(llmConfig().extra as any) };
+        if (b.thinkingOff) extra.thinking = { type: "disabled" }; else delete extra.thinking;
+        setSetting("llm_extra_body", Object.keys(extra).length ? JSON.stringify(extra) : null);
+      }
+      req.log.info({ by: req.user.id }, "model settings updated");
+      return settingsView();
+    });
+
+  api.post("/settings/test", { preHandler: adminOnly }, async (req, reply) => {
+    try { return { ok: true, message: await testConnection() }; }
+    catch (e: any) { return reply.code(e?.statusCode || 502).send({ error: e?.message || "Ошибка" }); }
   });
 
   api.post("/logout", async (req, reply) => {

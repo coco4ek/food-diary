@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS days (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, date)
 );
+-- app-wide settings edited by admins in the UI (override .env)
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS usage (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   date    TEXT NOT NULL,
@@ -50,6 +56,16 @@ CREATE TABLE IF NOT EXISTS usage (
   PRIMARY KEY (user_id, date)
 );
 `);
+
+export const getSetting = (key: string): string | undefined =>
+  (db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined)?.value;
+export function setSetting(key: string, value: string | null) {
+  if (value === null) db.prepare(`DELETE FROM settings WHERE key = ?`).run(key);
+  else db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run(key, value, Date.now());
+}
 
 export const hash = (t: string) => createHash("sha256").update(t).digest("hex");
 export const newToken = () => randomBytes(24).toString("base64url");

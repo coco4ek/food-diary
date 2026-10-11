@@ -182,6 +182,7 @@ async function estimate(){
     draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();
   }catch(e){
     if(e.code!==401)showMsg(e.message||String(e),true);
+    if(e.code===503&&me&&me.isAdmin)toggleSettings(true);
   }finally{$("calc").disabled=false;$("shoot").classList.remove("busy")}
 }
 async function saveDraft(){ try{ await saveDraftInner() }catch(e){ console.error(e); showMsg("Не удалось добавить: "+(e.message||e),true) } }
@@ -256,11 +257,46 @@ $("inviteBtn").onclick=async()=>{const name=$("inviteName").value.trim();if(!nam
   try{const {url}=await api("/invites",{method:"POST",body:{name}});$("inviteName").value="";showLink(url,`Ссылка для «${name}». Действует 7 дней, сработает один раз.`)}catch(e){showMsg(e.message,true)}};
 $("logout").onclick=async()=>{try{await api("/logout",{method:"POST"})}catch(e){}location.href="/"};
 
+/* ---------- settings panel ---------- */
+function toggleSettings(open){
+  const p=$("settings");open=open??p.hidden;p.hidden=!open;$("gear").setAttribute("aria-expanded",open);
+  if(open){if(me&&me.isAdmin)loadModel();p.scrollIntoView({behavior:"smooth",block:"start"})}
+}
+$("gear").onclick=()=>toggleSettings();
+$("closeSettings").onclick=()=>toggleSettings(false);
+function sMsg(t,kind){const m=$("sMsg");m.hidden=!t;m.textContent=t||"";m.className="msg"+(kind?" "+kind:"")}
+function fillModel(v){
+  $("sBase").value=v.baseUrl;$("sModel").value=v.model;$("sThinking").checked=!!v.thinkingOff;$("sKey").value="";
+  const st=$("keyState");
+  if(v.keySource==="none"){st.textContent="ключ не задан";st.className="pill bad";$("keyHint").textContent="Без ключа распознавание фото не работает."}
+  else{st.textContent="ключ задан";st.className="pill ok";
+    $("keyHint").textContent=v.keySource==="app"?`Сохранён ключ ${v.keyHint}. Оставь поле пустым, чтобы не менять его.`:`Сейчас используется ключ ${v.keyHint} из файла .env на сервере. Новый ключ отсюда заменит его.`}
+  $("sClearKey").hidden=v.keySource!=="app";
+}
+async function loadModel(){try{fillModel(await api("/settings"))}catch(e){sMsg(e.message,"err")}}
+$("sShow").onclick=()=>{const k=$("sKey");const show=k.type==="password";k.type=show?"text":"password";$("sShow").textContent=show?"Скрыть":"Показать"};
+$("modelForm").onsubmit=async ev=>{
+  ev.preventDefault();$("sSave").disabled=true;
+  try{const v=await api("/settings",{method:"PUT",body:{baseUrl:$("sBase").value,model:$("sModel").value,apiKey:$("sKey").value,thinkingOff:$("sThinking").checked}});
+    fillModel(v);$("sKey").type="password";$("sShow").textContent="Показать";sMsg("Сохранено","ok")}
+  catch(e){sMsg(e.message,"err")}finally{$("sSave").disabled=false}
+};
+$("sTest").onclick=async()=>{
+  $("sTest").disabled=true;sMsg("Проверяю сохранённые настройки…");
+  try{const r=await api("/settings/test",{method:"POST"});sMsg(r.message,"ok")}catch(e){sMsg(e.message,"err")}finally{$("sTest").disabled=false}
+};
+let clearArmed=null;
+$("sClearKey").onclick=async()=>{
+  if(!clearArmed){$("sClearKey").textContent="Точно удалить?";clearArmed=setTimeout(()=>{clearArmed=null;$("sClearKey").textContent="Удалить ключ"},4000);return}
+  clearTimeout(clearArmed);clearArmed=null;$("sClearKey").textContent="Удалить ключ";
+  try{fillModel(await api("/settings",{method:"PUT",body:{clearKey:true}}));sMsg("Ключ удалён","ok")}catch(e){sMsg(e.message,"err")}
+};
+
 (async()=>{
   try{me=await api("/me")}catch(e){if(e.code!==401){$("app").hidden=false;showMsg("Сервер недоступен: "+e.message,true)}return}
   if(location.search)history.replaceState(null,"","/");
   goal=me.goal;$("goal").value=goal;
-  $("who").textContent=me.name;$("adminBox").hidden=!me.isAdmin;
+  $("who").textContent=me.name;$("adminBox").hidden=!me.isAdmin;$("modelForm").hidden=!me.isAdmin;
   $("app").hidden=false;
   await openDay();
 })();

@@ -1,15 +1,28 @@
 // Food recognition through any OpenAI-compatible Chat Completions API
 // (OpenRouter, OpenAI, Gemini's OpenAI endpoint, local gateways, etc.)
 
-const BASE = (process.env.LLM_BASE_URL || "https://api.z.ai/api/paas/v4").replace(/\/+$/, "");
-const KEY = process.env.LLM_API_KEY || "";
-const MODEL = process.env.LLM_MODEL || "glm-4.6v";
+import { getSetting } from "./db.js";
+
 const MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 6000);
-// Provider-specific request fields as JSON, merged into the body.
-// For z.ai GLM, e.g. {"thinking":{"type":"disabled"}} for faster, cheaper answers.
-let EXTRA: Record<string, unknown> = {};
-try { EXTRA = process.env.LLM_EXTRA_BODY ? JSON.parse(process.env.LLM_EXTRA_BODY) : {}; }
-catch { console.error("LLM_EXTRA_BODY is not valid JSON — ignored"); }
+
+function parseExtra(raw: string | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try { const v = JSON.parse(raw); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }
+  catch { return {}; }
+}
+
+/** Settings saved in the app (admin → «Настройки модели») win over .env. */
+export function llmConfig() {
+  const dbKey = getSetting("llm_api_key");
+  return {
+    baseUrl: (getSetting("llm_base_url") || process.env.LLM_BASE_URL || "https://api.z.ai/api/paas/v4").replace(/\/+$/, ""),
+    model: getSetting("llm_model") || process.env.LLM_MODEL || "glm-4.6v",
+    apiKey: dbKey || process.env.LLM_API_KEY || "",
+    keySource: dbKey ? "app" : process.env.LLM_API_KEY ? "env" : "none",
+    // Provider-specific request fields, e.g. GLM {"thinking":{"type":"disabled"}}
+    extra: parseExtra(getSetting("llm_extra_body") ?? process.env.LLM_EXTRA_BODY),
+  } as const;
+}
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 90_000);
 
 export type Ingredient = { name: string; grams: number; kcal: number; protein: number; fat: number; carbs: number };
@@ -58,44 +71,44 @@ function normalize(raw: any): Estimate {
   return { dishes, note: typeof raw?.note === "string" ? raw.note.slice(0, 300) : "" };
 }
 
-export async function estimate(text: string, images: string[]): Promise<Estimate> {
-  if (!KEY) throw Object.assign(new Error("LLM_API_KEY не задан на сервере"), { statusCode: 500 });
-  const content: any[] = [{ type: "text", text: prompt(text, images.length > 0) }];
-  for (const url of images) content.push({ type: "image_url", image_url: { url } });
-
+async function chat(content: any[], maxTokens: number): Promise<string> {
+  const cfg = llmConfig();
+  if (!cfg.apiKey) throw Object.assign(new Error("API-ключ модели не задан. Администратор может указать его в «Настройках модели»."), { statusCode: 503 });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(`${BASE}/chat/completions`, {
+    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
       method: "POST",
       signal: ctrl.signal,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${KEY}`,
-        // harmless for other providers; OpenRouter shows these in its dashboard
-        "x-title": "kkal-dnevnik",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.2,
-        max_tokens: MAX_TOKENS,
-        messages: [{ role: "user", content }],
-        ...EXTRA,
-      }),
+      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}`, "x-title": "kkal-dnevnik" },
+      body: JSON.stringify({ model: cfg.model, temperature: 0.2, max_tokens: maxTokens, messages: [{ role: "user", content }], ...cfg.extra }),
     });
     const body: any = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = body?.error?.message || `HTTP ${res.status}`;
+      const msg = body?.error?.message || body?.message || `HTTP ${res.status}`;
       throw Object.assign(new Error(`Ошибка модели: ${msg}`), { statusCode: 502 });
     }
     const reply = body?.choices?.[0]?.message?.content;
-    const textReply = Array.isArray(reply) ? reply.map((p: any) => p?.text ?? "").join("") : String(reply ?? "");
-    return normalize(parseJson(textReply));
+    return Array.isArray(reply) ? reply.map((p: any) => p?.text ?? "").join("") : String(reply ?? "");
   } catch (e: any) {
     if (e?.name === "AbortError") throw Object.assign(new Error("Модель не ответила вовремя, попробуй ещё раз"), { statusCode: 504 });
+    if (e?.cause?.code) e = Object.assign(new Error(`Не удалось связаться с API (${e.cause.code}). Проверь адрес.`), { statusCode: 502 });
     if (!e.statusCode) e.statusCode = 502;
     throw e;
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function estimate(text: string, images: string[]): Promise<Estimate> {
+  const content: any[] = [{ type: "text", text: prompt(text, images.length > 0) }];
+  for (const url of images) content.push({ type: "image_url", image_url: { url } });
+  return normalize(parseJson(await chat(content, MAX_TOKENS)));
+}
+
+/** Cheap round-trip to check address, key and model from the settings screen. */
+export async function testConnection(): Promise<string> {
+  const t0 = Date.now();
+  const reply = await chat([{ type: "text", text: "Ответь одним словом: готово" }], 1500);
+  return `Модель ответила за ${((Date.now() - t0) / 1000).toFixed(1)} с: «${reply.trim().slice(0, 40) || "(пусто)"}»`;
 }
