@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { randomInt, timingSafeEqual } from "node:crypto";
 import { db, hash, now, User, USER_COLS } from "./db.js";
 
 const CODE_TTL = 10 * 60 * 1000;
@@ -6,6 +6,30 @@ const RESEND_AFTER = 60 * 1000;
 const MAX_PER_HOUR = 5;
 const MAX_ATTEMPTS = 5;
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+
+/*
+ * Temporary fixed code for one address (e.g. while SMTP is not set up).
+ * STATIC_LOGIN_CODE=6 digits; STATIC_LOGIN_EMAIL defaults to ADMIN_EMAIL.
+ */
+const STATIC_CODE = (process.env.STATIC_LOGIN_CODE || "").trim();
+const STATIC_EMAIL = (process.env.STATIC_LOGIN_EMAIL || process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+export const staticCodeEnabled = () => /^\d{6}$/.test(STATIC_CODE) && !!STATIC_EMAIL;
+export const staticCodeEmail = () => STATIC_EMAIL;
+export function isStaticCode(email: string, code: string): boolean {
+  if (!staticCodeEnabled() || email !== STATIC_EMAIL) return false;
+  const a = Buffer.from(code), b = Buffer.from(STATIC_CODE);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/* Failed code entries per address, across all codes (in memory): 10 per hour. */
+const fails = new Map<string, number[]>();
+export function verifyGuard(email: string) {
+  const t = Date.now(), list = (fails.get(email) || []).filter((x) => t - x < 3600_000);
+  fails.set(email, list);
+  if (list.length >= 10) throw new AuthError("Слишком много неверных кодов. Попробуй через час.", 429, 3600);
+}
+export const verifyFailed = (email: string) => { fails.set(email, [...(fails.get(email) || []), Date.now()]); };
+export const verifyOk = (email: string) => { fails.delete(email); };
 
 export const normEmail = (v: unknown) => (typeof v === "string" ? v.trim().toLowerCase() : "");
 export const isEmail = (e: string) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);

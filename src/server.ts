@@ -8,7 +8,7 @@ import {
   getDays, putDay, takeUsage, setSetting,
 } from "./db.js";
 import { estimate, llmConfig, testConnection } from "./llm.js";
-import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail } from "./auth.js";
+import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
 import { sendCode, sendInvite, mailConfigured } from "./mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -90,7 +90,11 @@ app.post<{ Body: { email?: string; code?: string } }>("/api/auth/verify", async 
   const current = userBySession(req.cookies[SID]);
   const attachTo = current && !current.email ? current : null;
   try {
-    checkCode(email, code);
+    verifyGuard(email);
+    if (!isStaticCode(email, code)) {
+      try { checkCode(email, code); } catch (e) { verifyFailed(email); throw e; }
+    }
+    verifyOk(email);
     const user = completeSignIn(email, attachTo);
     if (!attachTo) setSession(reply, user.id);
     req.log.info({ user: user.id, attached: !!attachTo }, "email sign-in");
@@ -271,6 +275,10 @@ if (n === 0) {
     `\n  Или откройте ссылку администратора (7 дней): ${url}\n` +
     (mailConfigured() ? "" : "  Почта (SMTP) не настроена: коды входа будут печататься в этот лог.\n")
   );
+}
+
+if (staticCodeEnabled()) {
+  app.log.warn(`Включён постоянный код входа для ${staticCodeEmail()} (STATIC_LOGIN_CODE). Уберите его из .env, когда настроите почту.`);
 }
 
 await app.listen({ port: PORT, host: "0.0.0.0" });
