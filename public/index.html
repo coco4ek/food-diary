@@ -257,6 +257,8 @@ textarea#text{width:100%;min-height:76px;resize:vertical;border:none;background:
 .urow .who b{font-weight:600}
 .urow .who small{display:block;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .urow .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.joinrow{flex-wrap:wrap}
+.joinrow button{flex:1 1 auto}
 .urow .acts button{font-size:13px;padding:6px 10px;min-height:34px}
 .urow.off .who{opacity:.55}
 .tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--muted);margin-left:6px;vertical-align:1px}
@@ -325,7 +327,7 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
       <input id="lEmail" class="txt big" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" required>
     </label>
     <button class="btn wide" id="lSend" type="submit">Получить код</button>
-    <small class="hint">Вход только по приглашению. Код придёт на почту, пароль не нужен.</small>
+    <small class="hint" id="lHint">Вход только по приглашению. Код придёт на почту, пароль не нужен.</small>
   </form>
   <form class="card lcard" id="codeForm" hidden novalidate>
     <p class="sent">Код отправлен на <b id="lTo"></b></p>
@@ -413,9 +415,18 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
           <input id="inviteEmail" class="txt" type="email" inputmode="email" placeholder="Почта нового участника" aria-label="Почта нового участника">
           <button class="btn" id="inviteBtn" type="submit">Пригласить</button>
         </form>
+        <div class="row joinrow">
+          <button class="ghost" id="joinOnce" type="button">Ссылка для мессенджера</button>
+          <button class="ghost" id="joinMulti" type="button">Многоразовая ссылка</button>
+        </div>
+        <div id="joinBox" class="linkbox" hidden>
+          <div class="msg" id="joinLabel"></div>
+          <div class="row"><input id="joinUrl" class="txt" readonly aria-label="Ссылка-приглашение"><button class="ghost" id="joinCopy" type="button">Копировать</button></div>
+        </div>
         <div class="msg" id="inviteMsg" hidden></div>
         <div id="userList" class="ulist"></div>
         <div id="inviteList" class="ulist"></div>
+        <div id="joinList" class="ulist"></div>
       </section>
       <div id="cfg" class="cfg" hidden></div>
     </section>

@@ -456,6 +456,8 @@ function showLogin(){
   $("app").hidden=true;$("login").hidden=false;
   const inv=new URLSearchParams(location.search).get("invite");
   if(inv&&!showLogin.invite){showLogin.invite=1;openInvite(inv);return}
+  const jn=new URLSearchParams(location.search).get("join");
+  if(jn&&!showLogin.join){showLogin.join=1;openJoin(jn);return}
   if(new URLSearchParams(location.search).get("link")==="invalid")loginMsg("Ссылка недействительна: она уже использована или устарела. Войди по почте.",true);
   try{const last=localStorage.getItem("kcal:email");if(last&&!$("lEmail").value)$("lEmail").value=last}catch(e){}
   setTimeout(()=>($("emailForm").hidden?$("lCode"):$("lEmail")).focus(),50);
@@ -474,6 +476,21 @@ async function openInvite(token){
     $("emailForm").hidden=false;loginMsg(e.message,true);setTimeout(()=>$("lEmail").focus(),50);
   }
 }
+/* sign-up link from a messenger: the person types their own email, the link lets it in */
+let joinToken=null;
+async function openJoin(token){
+  $("emailForm").hidden=true;$("codeForm").hidden=true;loginMsg("Открываю приглашение…");
+  try{
+    const {by}=await api("/auth/join?t="+encodeURIComponent(token));
+    joinToken=token;history.replaceState(null,"","/");
+    $("emailForm").hidden=false;$("lEmail").value="";
+    loginMsg("");const h=$("lHint");h.textContent=(by?`Тебя пригласил(а) ${by}. `:"Тебя пригласили. ")+"Введи свою почту — пришлём код, и дневник откроется. Пароль не нужен.";h.style.color="var(--ink)";
+    setTimeout(()=>$("lEmail").focus(),50);
+  }catch(e){
+    history.replaceState(null,"","/");
+    $("emailForm").hidden=false;loginMsg(e.message,true);
+  }
+}
 let resendT=null;
 function startResend(sec){
   clearInterval(resendT);const b=$("lResend");let left=sec;b.disabled=true;
@@ -485,7 +502,7 @@ async function requestCode(){
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){loginMsg("Проверь адрес почты",true);$("lEmail").focus();return false}
   $("lSend").disabled=true;loginMsg("");
   try{
-    const r=await api("/auth/request",{method:"POST",body:{email}});
+    const r=await api("/auth/request",{method:"POST",body:joinToken?{email,join:joinToken}:{email}});
     try{localStorage.setItem("kcal:email",email)}catch(e){}
     $("lTo").textContent=email;$("emailForm").hidden=true;$("codeForm").hidden=false;$("lCode").value="";$("lCode").focus();
     startResend(r.resendIn||60);return true;
@@ -505,7 +522,8 @@ $("lCode").addEventListener("input",()=>{const v=$("lCode").value.replace(/\D/g,
 $("codeForm").onsubmit=async ev=>{
   ev.preventDefault();const code=$("lCode").value;if(code.length!==6){loginMsg("Введи 6 цифр из письма",true);return}
   $("lVerify").disabled=true;loginMsg("Проверяю…");
-  try{await api("/auth/verify",{method:"POST",body:{email:$("lTo").textContent,code}});
+  try{const body={email:$("lTo").textContent,code};if(joinToken)body.join=joinToken;
+    await api("/auth/verify",{method:"POST",body});joinToken=null;
     loginMsg("");$("codeForm").hidden=true;$("emailForm").hidden=false;
     if(!(await boot()))loginMsg("Код принят, но браузер не сохранил вход. Разреши cookie для этого сайта и попробуй ещё раз.",true)}
   catch(e){loginMsg(e.message,true);$("lCode").select()}finally{$("lVerify").disabled=false}
@@ -569,6 +587,7 @@ async function loadPeople(){
     }
     r.append(w,acts);ul.append(r);
   }
+  renderJoinLinks(data.joinLinks);
   const il=$("inviteList");il.innerHTML="";
   if(data.invites.length){
     il.append(el("h4",null,"Ждут первого входа"));
@@ -583,6 +602,38 @@ async function loadPeople(){
     }
   }
 }
+function renderJoinLinks(list){
+  const jl=$("joinList");jl.innerHTML="";
+  if(!list||!list.length)return;
+  jl.append(el("h4",null,"Ссылки-приглашения"));
+  for(const j of list){
+    const r=el("div","urow"),w=el("div","who");
+    const used=j.uses?` · по ней пришли: ${j.uses}`:"";
+    w.append(el("b",null,j.multi?"Многоразовая, без срока":"Одноразовая"),
+      el("small",null,j.multi?`создана ${ago(j.createdAt)}${used}`:`создана ${ago(j.createdAt)} · действует до ${new Date(j.expiresAt).toLocaleDateString("ru-RU")}`));
+    const x=el("button","ghost danger","Отозвать");
+    x.onclick=async()=>{x.disabled=true;try{await api("/join-links/"+j.id,{method:"DELETE"});iMsg("Ссылка отозвана — по ней больше нельзя зарегистрироваться.","ok");loadPeople()}catch(e){iMsg(e.message,"err");x.disabled=false}};
+    const acts=el("div","acts");acts.append(x);r.append(w,acts);jl.append(r);
+  }
+}
+async function makeJoin(multi){
+  const b=$(multi?"joinMulti":"joinOnce");b.disabled=true;iMsg("");
+  try{
+    const {url}=await api("/join-links",{method:"POST",body:{multi}});
+    const label=multi
+      ?"Многоразовая ссылка: по ней может зарегистрироваться сколько угодно людей, пока ты её не отзовёшь. Не выкладывай её в открытые чаты."
+      :"Одноразовая ссылка на 7 дней: по ней зарегистрируется один человек.";
+    $("joinBox").hidden=false;$("joinLabel").textContent=label+" Ссылка показывается только сейчас.";$("joinUrl").value=url;
+    loadPeople();
+    if(navigator.share){try{await navigator.share({title:document.title,text:"Приглашаю в дневник калорий: фоткаешь еду — калории считаются сами.",url})}catch(e){}}
+    else $("joinUrl").select();
+  }catch(e){iMsg(e.message,"err")}finally{b.disabled=false}
+}
+$("joinOnce").onclick=()=>makeJoin(false);
+$("joinMulti").onclick=()=>{const b=$("joinMulti");
+  if(!b.dataset.armed){b.dataset.armed=1;b.textContent="Создать? Работает для всех";haptic();setTimeout(()=>{delete b.dataset.armed;b.textContent="Многоразовая ссылка"},4000);return}
+  delete b.dataset.armed;b.textContent="Многоразовая ссылка";makeJoin(true)};
+$("joinCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("joinUrl").value);$("joinCopy").textContent="Скопировано"}catch(e){$("joinUrl").select()}setTimeout(()=>$("joinCopy").textContent="Копировать",1500)};
 async function setUser(id,body){try{await api("/users/"+id,{method:"PUT",body});loadPeople()}catch(e){iMsg(e.message,"err")}}
 $("inviteForm").onsubmit=async ev=>{
   ev.preventDefault();const email=$("inviteEmail").value.trim();if(!email){$("inviteEmail").focus();return}

@@ -9,7 +9,7 @@ import {
 } from "./db.js";
 import { estimate, llmConfig, testConnection } from "./llm.js";
 import { conf, confNum, view as configView, update as configUpdate } from "./config.js";
-import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, inviteByToken, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
+import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, inviteByToken, joinLink, createJoinLink, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
 import { sendCode, sendInvite, sendTest, mailConfigured } from "./mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -73,14 +73,22 @@ app.get<{ Querystring: { t?: string } }>("/api/auth/invite", async (req, reply) 
   return { email };
 });
 
-app.post<{ Body: { email?: string } }>("/api/auth/request", async (req, reply) => {
+// sign-up link from a messenger → who invited (the person then types their own email)
+app.get<{ Querystring: { t?: string } }>("/api/auth/join", async (req, reply) => {
+  try { ipLimit(req.ip, 60); } catch (e) { return authFail(reply, e); }
+  const link = joinLink(String(req.query.t || ""));
+  if (!link) return reply.code(404).send({ error: "Ссылка-приглашение недействительна: её отозвали, она уже использована или устарела. Попроси новую." });
+  return { by: link.byName || "" };
+});
+
+app.post<{ Body: { email?: string; join?: string } }>("/api/auth/request", async (req, reply) => {
   const email = normEmail(req.body?.email);
   if (!isEmail(email)) return reply.code(400).send({ error: "Проверь адрес почты" });
   const current = userBySession(req.cookies[SID]);
   const attachTo = current && !current.email ? current : null;
   try {
     ipLimit(req.ip);
-    checkAllowed(email, attachTo);
+    checkAllowed(email, attachTo, typeof req.body?.join === "string" ? req.body.join : undefined);
     const code = issueCode(email);
     await sendCode(email, code);
   } catch (e: any) {
@@ -91,7 +99,7 @@ app.post<{ Body: { email?: string } }>("/api/auth/request", async (req, reply) =
   return { ok: true, resendIn: 60 };
 });
 
-app.post<{ Body: { email?: string; code?: string } }>("/api/auth/verify", async (req, reply) => {
+app.post<{ Body: { email?: string; code?: string; join?: string } }>("/api/auth/verify", async (req, reply) => {
   const email = normEmail(req.body?.email);
   const code = String(req.body?.code ?? "").replace(/\D/g, "");
   if (!isEmail(email) || code.length !== 6) return reply.code(400).send({ error: "Введи 6 цифр из письма" });
@@ -103,7 +111,7 @@ app.post<{ Body: { email?: string; code?: string } }>("/api/auth/verify", async 
       try { checkCode(email, code); } catch (e) { verifyFailed(email); throw e; }
     }
     verifyOk(email);
-    const user = completeSignIn(email, attachTo);
+    const user = completeSignIn(email, attachTo, typeof req.body?.join === "string" ? req.body.join : undefined);
     if (!attachTo) setSession(reply, user.id);
     req.log.info({ user: user.id, attached: !!attachTo }, "email sign-in");
     return { ok: true };
@@ -204,7 +212,11 @@ app.register(async (api) => {
        FROM users ORDER BY created_at`
     ).all();
     const invites = db.prepare(`SELECT email, created_at AS createdAt FROM email_invites ORDER BY created_at DESC`).all();
-    return { users, invites, me: req.user.id };
+    const joinLinks = db.prepare(
+      `SELECT id, multi, uses, created_at AS createdAt, expires_at AS expiresAt FROM join_links
+       WHERE expires_at IS NULL OR expires_at > ? ORDER BY created_at DESC`
+    ).all(Date.now());
+    return { users, invites, joinLinks, me: req.user.id };
   });
 
   api.put<{ Params: { id: string }; Body: { disabled?: boolean; isAdmin?: boolean } }>("/users/:id", async (req, reply) => {
@@ -236,6 +248,19 @@ app.register(async (api) => {
       }
     })();
     req.log.info({ by: req.user.id, deleted: id }, "user deleted");
+    return { ok: true };
+  });
+
+  // sign-up links to send in a messenger: one-time (7 days) or multi-use until revoked
+  api.post<{ Body: { multi?: boolean } }>("/join-links", async (req, reply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Приглашать могут только администраторы" });
+    const multi = req.body?.multi === true;
+    req.log.info({ by: req.user.id, multi }, "join link created");
+    return { url: `${baseUrl()}/?join=${createJoinLink(req.user.id, multi)}`, multi };
+  });
+  api.delete<{ Params: { id: string } }>("/join-links/:id", async (req, reply) => {
+    if (!req.user.is_admin) return reply.code(403).send({ error: "Только для администраторов" });
+    db.prepare(`DELETE FROM join_links WHERE id = ?`).run(Number(req.params.id));
     return { ok: true };
   });
 

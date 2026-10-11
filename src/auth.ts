@@ -50,7 +50,7 @@ export class AuthError extends Error {
  * addresses, ADMIN_EMAIL, and anyone while the app has no users yet (first admin).
  * `attachTo` is a signed-in user adding an email to an account made by an invite link.
  */
-export function checkAllowed(email: string, attachTo: User | null) {
+export function checkAllowed(email: string, attachTo: User | null, join?: string) {
   const u = userByEmail(email);
   if (u) {
     if (u.disabled) throw new AuthError("Этот аккаунт заблокирован. Напиши администратору.", 403);
@@ -59,6 +59,7 @@ export function checkAllowed(email: string, attachTo: User | null) {
   }
   if (attachTo) return;
   // with ADMIN_EMAIL set, nobody else can claim the empty app first
+  if (join && joinLink(join)) return;
   if (isInvited(email) || email === ADMIN_EMAIL || (userCount() === 0 && !ADMIN_EMAIL)) return;
   throw new AuthError("Вход только по приглашению. Попроси администратора пригласить этот email.", 403);
 }
@@ -113,8 +114,8 @@ export function checkCode(email: string, code: string) {
 }
 
 /** After a valid code: find, attach or create the account. Returns the user to sign in. */
-export const completeSignIn = db.transaction((email: string, attachTo: User | null): User => {
-  checkAllowed(email, attachTo);
+export const completeSignIn = db.transaction((email: string, attachTo: User | null, join?: string): User => {
+  checkAllowed(email, attachTo, join);
   const existing = userByEmail(email);
   if (existing) return existing;
   if (attachTo) {
@@ -125,7 +126,13 @@ export const completeSignIn = db.transaction((email: string, attachTo: User | nu
   const admin = first || email === ADMIN_EMAIL ? 1 : 0;
   const name = email.split("@")[0].slice(0, 60);
   const info = db.prepare(`INSERT INTO users (name, email, is_admin, goal, created_at) VALUES (?, ?, ?, ?, ?)`).run(name, email, admin, confNum("default_goal"), now());
-  db.prepare(`DELETE FROM email_invites WHERE email = ?`).run(email);
+  const viaInvite = db.prepare(`DELETE FROM email_invites WHERE email = ?`).run(email).changes > 0;
+  // spend the join link only when it is what let this person in
+  const link = !viaInvite && email !== ADMIN_EMAIL && join ? joinLink(join) : null;
+  if (link) {
+    if (link.multi) db.prepare(`UPDATE join_links SET uses = uses + 1 WHERE id = ?`).run(link.id);
+    else db.prepare(`DELETE FROM join_links WHERE id = ?`).run(link.id);
+  }
   return db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(info.lastInsertRowid) as User;
 });
 
@@ -157,4 +164,26 @@ export function inviteByToken(token: string): string | null {
   if (!token || token.length > 100) return null;
   const row = db.prepare(`SELECT email FROM email_invites WHERE token_hash = ?`).get(hash(token)) as { email: string } | undefined;
   return row?.email ?? null;
+}
+
+/* ---------- sign-up links for messengers (not tied to an email) ---------- */
+const JOIN_TTL = 7 * 24 * 3600_000;
+type JoinRow = { id: number; multi: number; byName: string | null };
+
+/** A valid join link by its token, or null (unknown, revoked or expired). */
+export function joinLink(token: string): JoinRow | null {
+  if (!token || token.length > 100) return null;
+  const row = db.prepare(
+    `SELECT j.id, j.multi, u.name AS byName FROM join_links j LEFT JOIN users u ON u.id = j.created_by
+     WHERE j.token_hash = ? AND (j.expires_at IS NULL OR j.expires_at > ?)`
+  ).get(hash(token), now()) as JoinRow | undefined;
+  return row ?? null;
+}
+
+/** New link: one-time for 7 days, or multi-use without expiry (until revoked). Returns the token. */
+export function createJoinLink(by: number, multi: boolean): string {
+  const token = newToken();
+  db.prepare(`INSERT INTO join_links (token_hash, created_by, created_at, expires_at, multi) VALUES (?, ?, ?, ?, ?)`)
+    .run(hash(token), by, now(), multi ? null : now() + JOIN_TTL, multi ? 1 : 0);
+  return token;
 }

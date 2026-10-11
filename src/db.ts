@@ -73,6 +73,20 @@ CREATE TABLE IF NOT EXISTS email_invites (
 );
 `);
 
+// shareable sign-up links (for messengers): not tied to an email.
+// multi=0: one person, expires_at set; multi=1: any number of people, no expiry until revoked.
+db.exec(`
+CREATE TABLE IF NOT EXISTS join_links (
+  id         INTEGER PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by INTEGER,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  multi      INTEGER NOT NULL DEFAULT 0,
+  uses       INTEGER NOT NULL DEFAULT 0
+);
+`);
+
 /* ---------- migrations for databases created by earlier versions ---------- */
 const cols = new Set((db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[]).map((c) => c.name));
 if (!cols.has("email")) db.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
