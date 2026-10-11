@@ -15,8 +15,13 @@ const cache={};
 
 /* ---------- server API ---------- */
 async function api(path,opts={}){
-  const res=await fetch("/api"+path,{credentials:"same-origin",headers:opts.body?{"content-type":"application/json"}:{},...opts,body:opts.body?JSON.stringify(opts.body):undefined});
-  if(res.status===401){showLogin();throw Object.assign(new Error("Нужно войти"),{code:401})}
+  // never hang forever: 30 s by default, longer for photo recognition
+  const ctrl=new AbortController(),ms=opts.timeout||30000,t=setTimeout(()=>ctrl.abort(),ms);
+  let res;
+  try{res=await fetch("/api"+path,{credentials:"same-origin",cache:"no-store",signal:ctrl.signal,headers:opts.body?{"content-type":"application/json"}:{},method:opts.method,body:opts.body?JSON.stringify(opts.body):undefined})}
+  catch(e){throw Object.assign(new Error(e.name==="AbortError"?"Сервер не ответил вовремя. Проверь интернет и попробуй ещё раз.":"Нет связи с сервером. Проверь интернет."),{code:0})}
+  finally{clearTimeout(t)}
+  if(res.status===401&&!path.startsWith("/auth/")){showLogin();throw Object.assign(new Error("Нужно войти"),{code:401})}
   const data=await res.json().catch(()=>({}));
   if(!res.ok)throw Object.assign(new Error(data.error||("Ошибка "+res.status)),{code:res.status,data});
   return data;
@@ -175,7 +180,7 @@ async function estimate(){
   $("calc").disabled=true;$("shoot").classList.add("busy");showMsg(photos.length?"Смотрю на фото и считаю…":"Считаю…");
   try{
     const images=await Promise.all(photos.map(p=>toDataURL(p.blob)));
-    const res=await api("/estimate",{method:"POST",body:{text,images,date:key(new Date())}});
+    const res=await api("/estimate",{method:"POST",timeout:150000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
@@ -278,7 +283,9 @@ $("lCode").addEventListener("input",()=>{const v=$("lCode").value.replace(/\D/g,
 $("codeForm").onsubmit=async ev=>{
   ev.preventDefault();const code=$("lCode").value;if(code.length!==6){loginMsg("Введи 6 цифр из письма",true);return}
   $("lVerify").disabled=true;loginMsg("Проверяю…");
-  try{await api("/auth/verify",{method:"POST",body:{email:$("lTo").textContent,code}});location.replace("/")}
+  try{await api("/auth/verify",{method:"POST",body:{email:$("lTo").textContent,code}});
+    loginMsg("");$("codeForm").hidden=true;$("emailForm").hidden=false;
+    if(!(await boot()))loginMsg("Код принят, но браузер не сохранил вход. Разреши cookie для этого сайта и попробуй ещё раз.",true)}
   catch(e){loginMsg(e.message,true);$("lCode").select()}finally{$("lVerify").disabled=false}
 };
 
@@ -384,12 +391,14 @@ $("sClearKey").onclick=async()=>{
   try{fillModel(await api("/settings",{method:"PUT",body:{clearKey:true}}));sMsg("Ключ удалён","ok")}catch(e){sMsg(e.message,"err")}
 };
 
-(async()=>{
-  try{me=await api("/me")}catch(e){if(e.code!==401){$("app").hidden=false;showMsg("Сервер недоступен: "+e.message,true)}return}
+async function boot(){
+  try{me=await api("/me")}catch(e){if(e.code!==401&&e.code!==undefined){$("login").hidden=true;$("app").hidden=false;showMsg("Сервер недоступен: "+e.message,true)}return false}
   if(location.search)history.replaceState(null,"","/");
   goal=me.goal;$("goal").value=goal;
   renderAccount();$("people").hidden=!me.isAdmin;$("modelForm").hidden=!me.isAdmin;
-  $("app").hidden=false;
+  $("login").hidden=true;$("app").hidden=false;
   await openDay();
-})();
+  return true;
+}
+boot();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
