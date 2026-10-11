@@ -327,7 +327,7 @@ const dateLong=d=>d.toLocaleDateString("ru-RU",{day:"numeric",month:"long",weekd
 function setTitle(){
   const t=$("dayLabel"),s=$("subtitle");
   if(view==="diary"){const n=dayName(day);t.textContent=n.charAt(0).toUpperCase()+n.slice(1);s.textContent=["Сегодня","Вчера"].includes(n)?dateLong(day):""}
-  else if(view==="week"){t.textContent="Неделя";const a=addDays(day,-6);s.textContent=`${a.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})} — ${day.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}`}
+  else if(view==="week"){t.textContent="Отчет";const a=addDays(day,-6);s.textContent=`${a.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})} — ${day.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}`}
   else{t.textContent="Настройки";s.textContent=""}
 }
 function go(v,replace){
