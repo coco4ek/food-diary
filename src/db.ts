@@ -163,6 +163,9 @@ export function putDay(userId: number, date: string, data: unknown) {
   ).run(userId, date, JSON.stringify(data), now());
 }
 
+export const refundUsage = (userId: number, date: string) =>
+  db.prepare(`UPDATE usage SET count = MAX(count - 1, 0) WHERE user_id = ? AND date = ?`).run(userId, date);
+
 /** Atomically count one recognition; returns false when the daily limit is reached. */
 export const takeUsage = db.transaction((userId: number, date: string, limit: number): boolean => {
   const row = db.prepare(`SELECT count FROM usage WHERE user_id = ? AND date = ?`).get(userId, date) as { count: number } | undefined;

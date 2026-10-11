@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   db, User, createLink, consumeLink, createSession, userBySession, deleteSession,
-  getDays, putDay, takeUsage, setSetting,
+  getDays, putDay, takeUsage, refundUsage, setSetting,
 } from "./db.js";
 import { estimate, llmConfig, testConnection } from "./llm.js";
 import { conf, confNum, view as configView, update as configUpdate } from "./config.js";
@@ -153,9 +153,13 @@ app.register(async (api) => {
     if (!takeUsage(req.user.id, date, limit)) {
       return reply.code(429).send({ error: `Лимит ${limit} распознаваний в день исчерпан` });
     }
+    // the person pressed «Отменить» (or closed the app): stop paying for the model call
+    const ac = new AbortController();
+    reply.raw.on("close", () => { if (!reply.raw.writableFinished) ac.abort(); });
     try {
-      return await estimate(text, images);
+      return await estimate(text, images, ac.signal);
     } catch (e: any) {
+      if (ac.signal.aborted) { refundUsage(req.user.id, date); req.log.info("estimate cancelled by client"); return; }
       req.log.warn({ err: e?.message }, "estimate failed");
       return reply.code(e?.statusCode || 502).send({ error: e?.message || "Ошибка распознавания" });
     }

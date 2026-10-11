@@ -78,11 +78,12 @@ function normalize(raw: any): Estimate {
   return { dishes, note: typeof raw?.note === "string" ? raw.note.slice(0, 300) : "" };
 }
 
-async function chat(content: any[], maxTokens?: number): Promise<string> {
+async function chat(content: any[], maxTokens?: number, cancel?: AbortSignal): Promise<string> {
   const cfg = llmConfig();
   if (!cfg.apiKey) throw Object.assign(new Error("API-ключ модели не задан. Администратор может указать его в «Настройках модели»."), { statusCode: 503 });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
+  if (cancel) { if (cancel.aborted) ctrl.abort(); else cancel.addEventListener("abort", () => ctrl.abort(), { once: true }); }
   try {
     const res = await uFetch(`${cfg.baseUrl}/chat/completions`, {
       dispatcher: agent,
@@ -99,6 +100,7 @@ async function chat(content: any[], maxTokens?: number): Promise<string> {
     const reply = body?.choices?.[0]?.message?.content;
     return Array.isArray(reply) ? reply.map((p: any) => p?.text ?? "").join("") : String(reply ?? "");
   } catch (e: any) {
+    if (e?.name === "AbortError" && cancel?.aborted) throw Object.assign(new Error("Отменено"), { statusCode: 499 });
     if (e?.name === "AbortError") throw Object.assign(new Error(`Модель не ответила за ${Math.round(cfg.timeoutMs / 1000)} с. Попробуй ещё раз или отключи «размышления» в настройках.`), { statusCode: 504 });
     const code = e?.cause?.code || e?.code;
     if (["ENOTFOUND", "ECONNREFUSED", "EAI_AGAIN", "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT"].includes(code))
@@ -111,10 +113,10 @@ async function chat(content: any[], maxTokens?: number): Promise<string> {
   }
 }
 
-export async function estimate(text: string, images: string[]): Promise<Estimate> {
+export async function estimate(text: string, images: string[], cancel?: AbortSignal): Promise<Estimate> {
   const content: any[] = [{ type: "text", text: prompt(text, images.length > 0) }];
   for (const url of images) content.push({ type: "image_url", image_url: { url } });
-  return normalize(parseJson(await chat(content)));
+  return normalize(parseJson(await chat(content, undefined, cancel)));
 }
 
 /** Cheap round-trip to check address, key and model from the settings screen. */

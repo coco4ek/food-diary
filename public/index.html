@@ -303,6 +303,11 @@ body.pushed .views{padding-bottom:calc(var(--safe-b) + 32px)}
 
 .addphoto small{display:block;font-size:11px;margin-top:-6px}
 .addphoto{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+
+.sheethead{display:grid;grid-template-columns:1fr auto 1fr}
+.sheethead #sheetReset{justify-self:end}
+.navbtn.danger{color:var(--warn)}
+.working .btn.act{margin-left:auto;background:var(--soft);color:var(--ink)}
 </style>
 </head>
 <body>
@@ -444,7 +449,7 @@ body.pushed .views{padding-bottom:calc(var(--safe-b) + 32px)}
     <div class="sheethead" id="sheetHead">
       <button class="navbtn" id="sheetClose">Закрыть</button>
       <h2 id="sheetTitle">Новая запись</h2>
-      <span style="width:72px"></span>
+      <button class="navbtn danger" id="sheetReset" hidden>Сбросить</button>
     </div>
     <div class="sheetbody" id="sheetBody">
       <div class="seg" id="mealSeg" role="group" aria-label="Приём пищи"></div>

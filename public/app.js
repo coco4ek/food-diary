@@ -20,9 +20,11 @@ const cache={};
 async function api(path,opts={}){
   // never hang forever: 30 s by default, longer for photo recognition
   const ctrl=new AbortController(),ms=opts.timeout||30000,t=setTimeout(()=>ctrl.abort(),ms);
+  if(opts.signal)opts.signal.addEventListener("abort",()=>ctrl.abort(),{once:true});
   let res;
   try{res=await fetch("/api"+path,{credentials:"same-origin",cache:"no-store",signal:ctrl.signal,headers:opts.body?{"content-type":"application/json"}:{},method:opts.method,body:opts.body?JSON.stringify(opts.body):undefined})}
-  catch(e){throw Object.assign(new Error(e.name==="AbortError"?"Сервер не ответил вовремя. Проверь интернет и попробуй ещё раз.":"Нет связи с сервером. Проверь интернет."),{code:0})}
+  catch(e){if(opts.signal&&opts.signal.aborted)throw Object.assign(new Error("Отменено"),{code:-1});
+    throw Object.assign(new Error(e.name==="AbortError"?"Сервер не ответил вовремя. Проверь интернет и попробуй ещё раз.":"Нет связи с сервером. Проверь интернет."),{code:0})}
   finally{clearTimeout(t)}
   if(res.status===401&&!path.startsWith("/auth/")){showLogin();throw Object.assign(new Error("Нужно войти"),{code:401})}
   const data=await res.json().catch(()=>({}));
@@ -184,6 +186,7 @@ async function openDay(){
 function updTotal(){$("prevTotal").textContent=draft.length?Math.round(sumI(draft.flatMap(d=>d.items)).kcal)+" ккал":"";$("save").disabled=!draft.length}
 function numInput(id,label,v){const i=el("input","n");i.type="number";i.min="0";i.id=id;i.setAttribute("aria-label",label);i.value=Math.round(v)||"";return i}
 function renderDraft(){
+  if(typeof updReset==="function")setTimeout(updReset);
   $("preview").hidden=!draft.length&&!draftNote;
   const list=$("prevList");list.innerHTML="";
   draft.forEach((d,di)=>{
@@ -232,26 +235,39 @@ function toast(t,err,action){
 }
 const haptic=(ms=8)=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
 
+let estCtrl=null;
+const cancelEstimate=()=>{if(estCtrl){estCtrl.abort();estCtrl=null}};
 async function estimate(){
+  if(estCtrl)return; // already running
   const text=$("text").value.trim();
   if(!text&&!photos.length){showMsg("Сфотографируй еду или опиши её словами.",true);return}
   $("calc").disabled=true;$("shoot").classList.add("busy");
   const what=photos.length?"Смотрю на фото и считаю":"Считаю",t0=Date.now();
-  const tick=()=>{const s=Math.round((Date.now()-t0)/1000);showMsg(s<5?what+"…":`${what}… ${s} с${s>40?" — модель думает, это нормально":""}`,false,true)};tick();const timer=setInterval(tick,1000);
+  const ctrl=estCtrl=new AbortController();
+  showMsg(what+"…",false,true,{label:"Отменить",fn:()=>{cancelEstimate();showMsg("Отменено. Фото и текст на месте — можно поправить и отправить снова.",false,false,{label:"Отправить снова",fn:estimate})}});
+  const tick=()=>{const s=Math.round((Date.now()-t0)/1000),sp=$("msg").querySelector("span:nth-child(2)");if(sp&&s>=5)sp.textContent=`${what}… ${s} с${s>40?" — модель думает, это нормально":""}`};const timer=setInterval(tick,1000);updReset();
   try{
     const images=await Promise.all(photos.map(async p=>p.data||(p.data=await toDataURL(p.blob))));
-    const res=await api("/estimate",{method:"POST",timeout:((me&&me.llmTimeoutSec)||300)*1000+30000,body:{text,images,date:key(new Date())}});
+    const res=await api("/estimate",{method:"POST",signal:ctrl.signal,timeout:((me&&me.llmTimeoutSec)||300)*1000+30000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
     draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();haptic(12);
     $("more").open=false;
   }catch(e){
+    if(e.code===-1||ctrl.signal.aborted)return; // cancelled: the message is already shown
     if(e.code===503&&me&&me.isAdmin){closeSheet();go("settings");toast(e.message,true);return}
     // everything is kept (photos, text, meal): one tap sends it again
     const retry={label:"Повторить",fn:()=>{if(!sheetOpen())openSheet(photos.length?"photo":"text");estimate()}};
     if(e.code!==401)showMsg(e.message||String(e),true,false,e.code===400||e.code===429?null:retry);
-  }finally{clearInterval(timer);$("calc").disabled=false;$("shoot").classList.remove("busy")}
+  }finally{clearInterval(timer);if(estCtrl===ctrl)estCtrl=null;$("calc").disabled=false;$("shoot").classList.remove("busy");updReset()}
+}
+/* «Сбросить»: drop photos, text and the recognised dishes and close the sheet */
+const hasEntry=()=>!!(draft.length||photos.length||$("text").value.trim()||estCtrl);
+function updReset(){const b=$("sheetReset");b.hidden=!hasEntry();b.textContent="Сбросить";delete b.dataset.armed}
+function resetEntry(){
+  cancelEstimate();draft=[];draftNote="";$("text").value="";clearPhoto();renderDraft();showMsg("");
+  closeSheet();toast("Запись сброшена");
 }
 async function saveDraft(){ try{ await saveDraftInner() }catch(e){ console.error(e); showMsg("Не удалось добавить: "+(e.message||e),true) } }
 async function saveDraftInner(){
@@ -280,6 +296,7 @@ const removeDish=(eid,di)=>mutate(eid,e=>e.dishes.splice(di,1));
 const removeIng=(eid,di,ii)=>mutate(eid,e=>e.dishes[di].items.splice(ii,1));
 function clearPhoto(){photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];$("photo").value="";$("gallery").value="";renderThumbs()}
 function renderThumbs(){
+  setTimeout(()=>typeof updReset==="function"&&updReset());
   const box=$("thumbs");box.innerHTML="";box.hidden=!photos.length;
   photos.forEach((p,i)=>{const f=document.createElement("figure");const im=document.createElement("img");im.src=p.url;im.alt="Фото еды "+(i+1);
     const x=document.createElement("button");x.textContent="×";x.setAttribute("aria-label","Убрать фото");x.onclick=()=>{URL.revokeObjectURL(p.url);photos.splice(i,1);renderThumbs()};
@@ -344,6 +361,7 @@ function openSheet(mode){
     document.body.style.overflow="hidden";history.pushState({sheet:1},"");
   }
   $("sheetTitle").textContent=mode==="text"?"Без фото":"Новая запись";
+  updReset();
   if(mode==="text"){$("more").open=true;setTimeout(()=>$("text").focus(),280)}
 }
 function closeSheet(fromHistory){
@@ -353,6 +371,12 @@ function closeSheet(fromHistory){
   if(!fromHistory&&history.state&&history.state.sheet)history.back();
 }
 $("sheetClose").onclick=()=>closeSheet();
+$("sheetReset").onclick=()=>{
+  const b=$("sheetReset");
+  if(draft.length&&!b.dataset.armed){b.dataset.armed=1;b.textContent="Точно?";haptic();setTimeout(()=>{if(b.dataset.armed){delete b.dataset.armed;b.textContent="Сбросить"}},3500);return}
+  haptic(15);resetEntry();
+};
+$("text").addEventListener("input",()=>updReset());
 $("scrim").onclick=()=>closeSheet();
 $("addText").onclick=()=>{haptic();openSheet("text")};
 window.addEventListener("popstate",()=>{if(sheetOpen()){closeSheet(true);return}if(view==="settings")go("diary",true)});
