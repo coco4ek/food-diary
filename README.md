@@ -38,7 +38,7 @@ server {
     server_name diary.example.com;
 
     client_max_body_size 20m;     # фото; без этого — ошибка 413
-    proxy_read_timeout 120s;      # распознавание может идти до 1,5 мин
+    proxy_read_timeout 330s;      # модель может думать несколько минут
 
     location / {
         proxy_pass http://127.0.0.1:3010;
@@ -136,7 +136,7 @@ docker compose exec -u node kkal node dist/cli.js login 2                  # с�
 | `LLM_EXTRA_BODY` | Доп. поля запроса в JSON, например `{"thinking":{"type":"disabled"}}` для GLM | — |
 | `LLM_MAX_TOKENS` | Предел длины ответа (с запасом на «размышления» модели) | `6000` |
 | `DAILY_LIMIT` | Распознаваний на человека в день | `40` |
-| `LLM_TIMEOUT_MS` | Таймаут запроса к модели | `90000` |
+| `LLM_TIMEOUT_MS` | Сколько ждать ответа модели, мс | `300000` (5 мин) |
 | `PORT` | Порт внутри контейнера | `3000` |
 
 Точность сильно зависит от модели. Перед тем как выбрать дешёвую, проверьте её на нескольких своих фото.

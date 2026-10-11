@@ -23,7 +23,7 @@ export function llmConfig() {
     extra: parseExtra(getSetting("llm_extra_body") ?? process.env.LLM_EXTRA_BODY),
   } as const;
 }
-const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 90_000);
+const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 300_000); // GLM with thinking can take minutes
 
 export type Ingredient = { name: string; grams: number; kcal: number; protein: number; fat: number; carbs: number };
 export type Dish = { name: string; items: Ingredient[] };
@@ -91,7 +91,7 @@ async function chat(content: any[], maxTokens: number): Promise<string> {
     const reply = body?.choices?.[0]?.message?.content;
     return Array.isArray(reply) ? reply.map((p: any) => p?.text ?? "").join("") : String(reply ?? "");
   } catch (e: any) {
-    if (e?.name === "AbortError") throw Object.assign(new Error("Модель не ответила вовремя, попробуй ещё раз"), { statusCode: 504 });
+    if (e?.name === "AbortError") throw Object.assign(new Error(`Модель не ответила за ${Math.round(TIMEOUT_MS / 1000)} с. Попробуй ещё раз или отключи «размышления» в настройках.`), { statusCode: 504 });
     if (e?.cause?.code) e = Object.assign(new Error(`Не удалось связаться с API (${e.cause.code}). Проверь адрес.`), { statusCode: 502 });
     if (!e.statusCode) e.statusCode = 502;
     throw e;

@@ -42,6 +42,23 @@ const normEntry=e=>{if(!e.dishes){e.dishes=(e.items||[]).map(i=>({name:i.name,it
 async function getDay(k){ if(!(k in cache)){const d=new Date(k+"T12:00:00");await prefetch(d,d)} return cache[k]; }
 const sumI=items=>items.reduce((t,i)=>(t.kcal+=+i.kcal||0,t.protein+=+i.protein||0,t.fat+=+i.fat||0,t.carbs+=+i.carbs||0,t.grams+=+i.grams||0,t),{kcal:0,protein:0,fat:0,carbs:0,grams:0});
 const scale=(i,f)=>{i.grams*=f;i.kcal*=f;i.protein*=f;i.fat*=f;i.carbs*=f};
+/* Per-gram values are remembered on first edit, so clearing the field (0 g) never loses the ratio. */
+const dens=it=>it._d||(it.grams>0?(it._d={kcal:it.kcal/it.grams,protein:it.protein/it.grams,fat:it.fat/it.grams,carbs:it.carbs/it.grams}):null);
+function setGrams(it,g){const d=dens(it);it.grams=g;if(d){it.kcal=d.kcal*g;it.protein=d.protein*g;it.fat=d.fat*g;it.carbs=d.carbs*g}}
+function setKcal(it,v){it.kcal=v;if(it.grams>0){const d=dens(it)||{protein:0,fat:0,carbs:0};it._d={...d,kcal:v/it.grams}}}
+/* "120 г" that turns into a number field; commits on Enter/blur, Esc cancels */
+function gramsBtn(grams,label,onCommit){
+  const b=el("button","gbtn",`${Math.round(grams)} г`);b.title="Изменить вес";b.setAttribute("aria-label",`${label}: изменить вес, сейчас ${Math.round(grams)} г`);
+  b.onclick=ev=>{
+    ev.stopPropagation();
+    const inp=el("input","gin");inp.type="number";inp.inputMode="numeric";inp.min="1";inp.value=Math.round(grams);inp.setAttribute("aria-label",label+", граммы");
+    let done=false;const finish=ok=>{if(done)return;done=true;const v=Math.round(+inp.value);if(ok&&v>0&&v!==Math.round(grams))onCommit(v);else inp.replaceWith(b)};
+    inp.onkeydown=e=>{if(e.key==="Enter")finish(true);if(e.key==="Escape")finish(false)};
+    inp.onblur=()=>finish(true);inp.onclick=e=>e.stopPropagation();
+    b.replaceWith(inp);inp.focus();inp.select();
+  };
+  return b;
+}
 const macroTxt=t=>`Б ${r1(t.protein)} · Ж ${r1(t.fat)} · У ${r1(t.carbs)}`;
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(label,fn){const x=el("button","x","×");x.setAttribute("aria-label",label);x.onclick=ev=>{ev.stopPropagation();fn()};return x}
@@ -91,16 +108,18 @@ function renderDay(){
       const multi=d.items.length>1||(d.items[0]&&d.items[0].name!==d.name);
       const wrap=el("div","dish"), row=el("div","item");
       const nm=el(multi?"button":"div","nm");
-      const txt=el("div");txt.append(el("div",null,d.name),el("small",null,`${Math.round(t.grams)} г · ${macroTxt(t)}${multi?` · ${d.items.length} ингр.`:""}`));
+      const txt=el("div");txt.append(el("div",null,d.name),el("small",null,`${macroTxt(t)}${multi?` · ${d.items.length} ингр.`:""}`));
       nm.append(el("span","chev",multi?"▸":""),txt);
-      row.append(nm,el("div","k",Math.round(t.kcal)),xbtn("Удалить "+d.name,()=>removeDish(e.id,di)));
+      const gb=gramsBtn(t.grams,d.name,v=>mutate(e.id,en=>{const dd=en.dishes[di],tg=sumI(dd.items).grams;if(tg>0)dd.items.forEach(i=>scale(i,v/tg));else dd.items[0].grams=v}));
+      row.append(nm,gb,el("div","k",Math.round(t.kcal)),xbtn("Удалить "+d.name,()=>removeDish(e.id,di)));
       wrap.append(row);
       if(multi){
         const ings=el("div","ings");const open=openSet.has(key2);ings.hidden=!open;nm.setAttribute("aria-expanded",open);
         d.items.forEach((it,ii)=>{
           const r=el("div","ing"),a=el("div");
-          a.append(el("div",null,it.name),el("small",null,`${Math.round(it.grams)} г · ${macroTxt(it)}`));
-          r.append(a,el("div","k",Math.round(it.kcal)),xbtn("Удалить "+it.name,()=>removeIng(e.id,di,ii)));ings.append(r);
+          a.append(el("div",null,it.name),el("small",null,macroTxt(it)));
+          const ib=gramsBtn(it.grams,it.name,v=>mutate(e.id,en=>{const x=en.dishes[di].items[ii];if(x.grams>0)scale(x,v/x.grams);else x.grams=v}));
+          r.append(a,ib,el("div","k",Math.round(it.kcal)),xbtn("Удалить "+it.name,()=>removeIng(e.id,di,ii)));ings.append(r);
         });
         nm.onclick=()=>{const o=!openSet.has(key2);o?openSet.add(key2):openSet.delete(key2);ings.hidden=!o;nm.setAttribute("aria-expanded",o)};
         wrap.append(ings);
@@ -154,8 +173,8 @@ function renderDraft(){
         const r=el("div","pi");
         const n=el("input");n.value=it.name;n.placeholder="Ингредиент";n.id=`in${di}_${ii}`;n.oninput=()=>{it.name=n.value};
         const ig=numInput(`ig${di}_${ii}`,"Граммы",it.grams), ik=numInput(`ik${di}_${ii}`,"Ккал",it.kcal);
-        ig.oninput=()=>{const ng=+ig.value||0;if(it.grams>0)scale(it,ng/it.grams);else it.grams=ng;ik.value=Math.round(it.kcal)||"";refreshHead()};
-        ik.oninput=()=>{it.kcal=+ik.value||0;refreshHead()};
+        ig.oninput=()=>{const ng=+ig.value;if(!(ng>0))return;setGrams(it,ng);ik.value=Math.round(it.kcal)||"";refreshHead()};
+        ik.oninput=()=>{setKcal(it,+ik.value||0);refreshHead()};
         r.append(n,ig,ik,xbtn("Убрать ингредиент",()=>{d.items.splice(ii,1);if(!d.items.length){draft.splice(di,1);renderDraft();return}buildIngs();refreshHead()}));
         ings.append(r);
       });
@@ -164,7 +183,7 @@ function renderDraft(){
       ings.append(add);
     };
     nm.oninput=()=>{if(d.items.length===1&&d.items[0].name===d.name)d.items[0].name=nm.value;d.name=nm.value;if(d._open)buildIngs()};
-    g.oninput=()=>{const ng=+g.value||0,t=sumI(d.items);if(ng>0&&t.grams>0){d.items.forEach(i=>scale(i,ng/t.grams));buildIngs();refreshHead(false)}};
+    g.oninput=()=>{const ng=+g.value,t=sumI(d.items);if(ng>0&&t.grams>0){const f=ng/t.grams;d.items.forEach(i=>setGrams(i,i.grams*f));buildIngs();refreshHead(false)}};
     tog.onclick=()=>{d._open=!d._open;ings.hidden=!d._open;refreshHead(false)};
     buildIngs();refreshHead();
     box.append(head,meta,ings);list.append(box);
@@ -177,10 +196,12 @@ function showMsg(t,err){const m=$("msg");m.hidden=!t;m.textContent=t||"";m.class
 async function estimate(){
   const text=$("text").value.trim();
   if(!text&&!photos.length){showMsg("Сфотографируй еду или опиши её словами.",true);return}
-  $("calc").disabled=true;$("shoot").classList.add("busy");showMsg(photos.length?"Смотрю на фото и считаю…":"Считаю…");
+  $("calc").disabled=true;$("shoot").classList.add("busy");
+  const what=photos.length?"Смотрю на фото и считаю":"Считаю",t0=Date.now();
+  const tick=()=>{const s=Math.round((Date.now()-t0)/1000);showMsg(s<5?what+"…":`${what}… ${s} с${s>40?" (модель думает, это нормально)":""}`)};tick();const timer=setInterval(tick,1000);
   try{
     const images=await Promise.all(photos.map(p=>toDataURL(p.blob)));
-    const res=await api("/estimate",{method:"POST",timeout:150000,body:{text,images,date:key(new Date())}});
+    const res=await api("/estimate",{method:"POST",timeout:330000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
@@ -188,7 +209,7 @@ async function estimate(){
   }catch(e){
     if(e.code!==401)showMsg(e.message||String(e),true);
     if(e.code===503&&me&&me.isAdmin)toggleSettings(true);
-  }finally{$("calc").disabled=false;$("shoot").classList.remove("busy")}
+  }finally{clearInterval(timer);$("calc").disabled=false;$("shoot").classList.remove("busy")}
 }
 async function saveDraft(){ try{ await saveDraftInner() }catch(e){ console.error(e); showMsg("Не удалось добавить: "+(e.message||e),true) } }
 async function saveDraftInner(){
@@ -204,9 +225,10 @@ async function saveDraftInner(){
 async function mutate(eid,fn){
   const k=key(day); const d=await getDay(k);
   const e=d.entries.find(x=>x.id===eid); if(!e)return;
+  const before=e.dishes.length;
   fn(e); e.dishes=e.dishes.filter(x=>x.items.length);
   if(!e.dishes.length)d.entries=d.entries.filter(x=>x!==e);
-  [...openSet].forEach(x=>x.startsWith(eid+":")&&openSet.delete(x));
+  if(e.dishes.length!==before)[...openSet].forEach(x=>x.startsWith(eid+":")&&openSet.delete(x));
   dayData=d;renderDay();renderWeek();
   await store("day-"+k,{entries:d.entries});
 }
