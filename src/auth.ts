@@ -1,5 +1,6 @@
 import { randomInt, timingSafeEqual } from "node:crypto";
 import { db, hash, now, User, USER_COLS } from "./db.js";
+import { conf, confNum } from "./config.js";
 
 const CODE_TTL = 10 * 60 * 1000;
 const RESEND_AFTER = 60 * 1000;
@@ -11,13 +12,13 @@ const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
  * Temporary fixed code for one address (e.g. while SMTP is not set up).
  * STATIC_LOGIN_CODE=6 digits; STATIC_LOGIN_EMAIL defaults to ADMIN_EMAIL.
  */
-const STATIC_CODE = (process.env.STATIC_LOGIN_CODE || "").trim();
 const STATIC_EMAIL = (process.env.STATIC_LOGIN_EMAIL || process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-export const staticCodeEnabled = () => /^\d{6}$/.test(STATIC_CODE) && !!STATIC_EMAIL;
+const staticCode = () => conf("static_login_code").trim();
+export const staticCodeEnabled = () => /^\d{6}$/.test(staticCode()) && !!STATIC_EMAIL;
 export const staticCodeEmail = () => STATIC_EMAIL;
 export function isStaticCode(email: string, code: string): boolean {
   if (!staticCodeEnabled() || email !== STATIC_EMAIL) return false;
-  const a = Buffer.from(code), b = Buffer.from(STATIC_CODE);
+  const a = Buffer.from(code), b = Buffer.from(staticCode());
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
@@ -123,7 +124,7 @@ export const completeSignIn = db.transaction((email: string, attachTo: User | nu
   const first = userCount() === 0;
   const admin = first || email === ADMIN_EMAIL ? 1 : 0;
   const name = email.split("@")[0].slice(0, 60);
-  const info = db.prepare(`INSERT INTO users (name, email, is_admin, created_at) VALUES (?, ?, ?, ?)`).run(name, email, admin, now());
+  const info = db.prepare(`INSERT INTO users (name, email, is_admin, goal, created_at) VALUES (?, ?, ?, ?, ?)`).run(name, email, admin, confNum("default_goal"), now());
   db.prepare(`DELETE FROM email_invites WHERE email = ?`).run(email);
   return db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(info.lastInsertRowid) as User;
 });

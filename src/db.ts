@@ -125,8 +125,8 @@ export const consumeLink = db.transaction((token: string): User | null => {
     return u && !u.disabled ? u : null;
   }
   const info = db
-    .prepare(`INSERT INTO users (name, is_admin, created_at) VALUES (?, ?, ?)`)
-    .run(row.name || "Пользователь", row.is_admin, now());
+    .prepare(`INSERT INTO users (name, is_admin, goal, created_at) VALUES (?, ?, ?, ?)`)
+    .run(row.name || "Пользователь", row.is_admin, Number(getSetting("default_goal")) || 2000, now());
   return db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(info.lastInsertRowid) as User;
 });
 

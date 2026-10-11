@@ -215,6 +215,14 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .gbtn{border:1px dashed var(--line);background:none;border-radius:8px;padding:2px 8px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .gbtn:hover{border-color:var(--muted);color:var(--ink)}
 .gin{width:72px;border:1px solid var(--accent);background:var(--bg);border-radius:8px;padding:3px 8px;font-size:13px;text-align:right}
+
+.cfg{display:flex;flex-direction:column;gap:12px}
+.cfgcard .fld .lab{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.src{font-size:11px;font-weight:600;color:var(--muted);background:var(--soft);border-radius:999px;padding:1px 8px}
+.src.app{color:var(--p);background:color-mix(in srgb,var(--p) 14%,transparent)}
+.fld textarea.txt{min-height:64px;border-radius:10px;font:inherit;resize:vertical}
+.fld .reset{border:none;background:none;color:var(--muted);font-size:12px;text-decoration:underline;padding:0;margin-left:auto}
+.cfgnote{font-size:12px;color:var(--muted);padding:0 4px}
 </style>
 </head>
 <body>
@@ -287,30 +295,7 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
       <div id="userList" class="ulist"></div>
       <div id="inviteList" class="ulist"></div>
     </section>
-    <form class="card" id="modelForm" hidden>
-      <div class="row"><span class="label">Модель распознавания</span><span class="spacer"></span><span class="pill" id="keyState"></span></div>
-      <label class="fld" for="sKey"><span>API-ключ</span>
-        <span class="row"><input id="sKey" class="txt" type="password" autocomplete="off" spellcheck="false" placeholder="Вставь ключ"><button type="button" class="ghost" id="sShow">Показать</button></span>
-        <small id="keyHint"></small>
-      </label>
-      <label class="fld" for="sModel"><span>Модель</span>
-        <input id="sModel" class="txt" list="models" spellcheck="false">
-        <datalist id="models"><option value="glm-4.6v">основная</option><option value="glm-4.6v-flashx">дешевле и быстрее</option><option value="glm-4.6v-flash">бесплатная</option><option value="glm-5v-turbo">новейшая</option></datalist>
-        <small>Модель должна понимать фото.</small>
-      </label>
-      <label class="fld" for="sBase"><span>Адрес API</span>
-        <input id="sBase" class="txt" type="url" spellcheck="false" placeholder="https://api.z.ai/api/paas/v4">
-        <small>z.ai: https://api.z.ai/api/paas/v4 · OpenRouter: https://openrouter.ai/api/v1</small>
-      </label>
-      <label class="check" for="sThinking"><input type="checkbox" id="sThinking"> <span>Отключить «размышления» модели<small>Быстрее и дешевле, но иногда менее точно. Для GLM.</small></span></label>
-      <div class="row">
-        <button type="button" class="ghost" id="sTest">Проверить</button>
-        <button type="button" class="ghost danger" id="sClearKey" hidden>Удалить ключ</button>
-        <span class="spacer"></span>
-        <button type="submit" class="btn" id="sSave">Сохранить</button>
-      </div>
-      <div class="msg" id="sMsg" hidden></div>
-    </form>
+    <div id="cfg" class="cfg" hidden></div>
   </section>
 
   <section class="dial" aria-label="Итог дня">

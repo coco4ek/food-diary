@@ -1,6 +1,6 @@
 // App-shell cache so the PWA opens instantly and installs on phones.
 // API calls and sign-in links always go to the network.
-const CACHE = "kkal-v4";
+const CACHE = "kkal-v5";
 const SHELL = ["/", "/app.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {

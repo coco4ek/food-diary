@@ -201,7 +201,7 @@ async function estimate(){
   const tick=()=>{const s=Math.round((Date.now()-t0)/1000);showMsg(s<5?what+"…":`${what}… ${s} с${s>40?" (модель думает, это нормально)":""}`)};tick();const timer=setInterval(tick,1000);
   try{
     const images=await Promise.all(photos.map(p=>toDataURL(p.blob)));
-    const res=await api("/estimate",{method:"POST",timeout:330000,body:{text,images,date:key(new Date())}});
+    const res=await api("/estimate",{method:"POST",timeout:((me&&me.llmTimeoutSec)||300)*1000+30000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
@@ -381,43 +381,92 @@ $("inviteForm").onsubmit=async ev=>{
 /* ---------- settings panel ---------- */
 function toggleSettings(open){
   const p=$("settings");open=open??p.hidden;p.hidden=!open;$("gear").setAttribute("aria-expanded",open);
-  if(open){if(me&&me.isAdmin){loadModel();loadPeople()}p.scrollIntoView({behavior:"smooth",block:"start"})}
+  if(open){if(me&&me.isAdmin){loadConfig();loadPeople()}p.scrollIntoView({behavior:"smooth",block:"start"})}
 }
 $("gear").onclick=()=>toggleSettings();
 $("closeSettings").onclick=()=>toggleSettings(false);
-function sMsg(t,kind){const m=$("sMsg");m.hidden=!t;m.textContent=t||"";m.className="msg"+(kind?" "+kind:"")}
-function fillModel(v){
-  $("sBase").value=v.baseUrl;$("sModel").value=v.model;$("sThinking").checked=!!v.thinkingOff;$("sKey").value="";
-  const st=$("keyState");
-  if(v.keySource==="none"){st.textContent="ключ не задан";st.className="pill bad";$("keyHint").textContent="Без ключа распознавание фото не работает."}
-  else{st.textContent="ключ задан";st.className="pill ok";
-    $("keyHint").textContent=v.keySource==="app"?`Сохранён ключ ${v.keyHint}. Оставь поле пустым, чтобы не менять его.`:`Сейчас используется ключ ${v.keyHint} из файла .env на сервере. Новый ключ отсюда заменит его.`}
-  $("sClearKey").hidden=v.keySource!=="app";
+/* ---------- settings (admins): forms generated from the server's field list ---------- */
+const GROUPS=[["model","Модель распознавания"],["limits","Лимиты"],["mail","Почта"],["site","Сайт"],["login","Вход"]];
+const SRC={app:"задано здесь",env:"из .env",default:"по умолчанию"};
+let cfgFields=[],cfgEnvOnly=[];
+async function loadConfig(){try{const r=await api("/settings");cfgFields=r.fields;cfgEnvOnly=r.envOnly||[];renderConfig()}catch(e){$("cfg").textContent=e.message}}
+function fieldEl(f){
+  const id="c_"+f.key;
+  if(f.type==="bool"){
+    const l=el("label","check");l.htmlFor=id;const c=el("input");c.type="checkbox";c.id=id;c.checked=f.value==="1"||f.value==="true";
+    const t=el("span",null,f.label);if(f.help)t.append(el("small",null,f.help));l.append(c,t);return l;
+  }
+  const l=el("label","fld");l.htmlFor=id;
+  const lab=el("span","lab");lab.append(el("span",null,f.label),el("span","src"+(f.source==="app"?" app":""),SRC[f.source]));
+  if(f.source==="app"&&f.type!=="secret"){const r=el("button","reset","сбросить");r.type="button";r.title="Вернуть значение из .env или по умолчанию";r.onclick=()=>saveCfg({[f.key]:null},l.closest("form"));lab.append(r)}
+  l.append(lab);
+  let inp;
+  if(f.type==="textarea"){inp=el("textarea","txt");inp.rows=2;inp.value=f.value||""}
+  else{
+    inp=el("input","txt");inp.type=f.type==="secret"?"password":f.type==="number"?"number":f.type==="url"?"url":f.type==="email"?"email":"text";
+    inp.value=f.type==="secret"?"":(f.value??"");
+    if(f.type==="number"){if(f.min!=null)inp.min=f.min;if(f.max!=null)inp.max=f.max;inp.step=f.step||1;inp.inputMode=f.step&&f.step<1?"decimal":"numeric"}
+    if(f.type==="secret"){inp.autocomplete="off";inp.placeholder=f.isSet?"Оставь пустым, чтобы не менять":"Не задано"}
+    if(f.options){const dl=el("datalist");dl.id=id+"_l";for(const o of f.options){const op=el("option");op.value=o.value;op.label=o.label;dl.append(op)}inp.setAttribute("list",dl.id);l.append(dl)}
+  }
+  inp.id=id;inp.spellcheck=false;if(f.placeholder&&!inp.placeholder)inp.placeholder=f.placeholder;
+  if(f.type==="secret"){
+    const row=el("span","row");const sh=el("button","ghost","Показать");sh.type="button";
+    sh.onclick=()=>{const v=inp.type==="password";inp.type=v?"text":"password";sh.textContent=v?"Скрыть":"Показать"};
+    row.append(inp,sh);
+    if(f.source==="app"){const del=el("button","ghost danger","Удалить");del.type="button";
+      del.onclick=()=>{if(!del.dataset.armed){del.dataset.armed=1;del.textContent="Точно?";setTimeout(()=>{delete del.dataset.armed;del.textContent="Удалить"},4000);return}saveCfg({[f.key]:null},l.closest("form"))};row.append(del)}
+    l.append(row);
+    if(f.isSet)l.append(el("small",null,`Сейчас: ${f.hint}${f.source==="env"?" (из .env)":""}`));
+  }else l.append(inp);
+  if(f.help)l.append(el("small",null,f.help));
+  return l;
 }
-async function loadModel(){try{fillModel(await api("/settings"))}catch(e){sMsg(e.message,"err")}}
-$("sShow").onclick=()=>{const k=$("sKey");const show=k.type==="password";k.type=show?"text":"password";$("sShow").textContent=show?"Скрыть":"Показать"};
-$("modelForm").onsubmit=async ev=>{
-  ev.preventDefault();$("sSave").disabled=true;
-  try{const v=await api("/settings",{method:"PUT",body:{baseUrl:$("sBase").value,model:$("sModel").value,apiKey:$("sKey").value,thinkingOff:$("sThinking").checked}});
-    fillModel(v);$("sKey").type="password";$("sShow").textContent="Показать";sMsg("Сохранено","ok")}
-  catch(e){sMsg(e.message,"err")}finally{$("sSave").disabled=false}
-};
-$("sTest").onclick=async()=>{
-  $("sTest").disabled=true;sMsg("Проверяю сохранённые настройки…");
-  try{const r=await api("/settings/test",{method:"POST"});sMsg(r.message,"ok")}catch(e){sMsg(e.message,"err")}finally{$("sTest").disabled=false}
-};
-let clearArmed=null;
-$("sClearKey").onclick=async()=>{
-  if(!clearArmed){$("sClearKey").textContent="Точно удалить?";clearArmed=setTimeout(()=>{clearArmed=null;$("sClearKey").textContent="Удалить ключ"},4000);return}
-  clearTimeout(clearArmed);clearArmed=null;$("sClearKey").textContent="Удалить ключ";
-  try{fillModel(await api("/settings",{method:"PUT",body:{clearKey:true}}));sMsg("Ключ удалён","ok")}catch(e){sMsg(e.message,"err")}
-};
+function cMsg(form,t,kind){const m=form.querySelector(".msg");m.hidden=!t;m.textContent=t||"";m.className="msg"+(kind?" "+kind:"")}
+async function saveCfg(values,form){
+  if(!Object.keys(values).length){cMsg(form,"Изменений нет");return}
+  const g=form.dataset.group;
+  try{const r=await api("/settings",{method:"PUT",body:{values}});cfgFields=r.fields;renderConfig();
+    const nf=$("cfg").querySelector(`form[data-group="${g}"]`);cMsg(nf,"Сохранено","ok");
+    if("daily_limit" in values||"llm_timeout_sec" in values)me=await api("/me").catch(()=>me);
+  }catch(e){cMsg(form,e.message,"err")}
+}
+function renderConfig(){
+  const box=$("cfg");box.innerHTML="";
+  for(const [g,title] of GROUPS){
+    const fs=cfgFields.filter(f=>f.group===g);if(!fs.length)continue;
+    const form=el("form","card cfgcard");form.noValidate=true;form.dataset.group=g;
+    const head=el("div","row");head.append(el("span","label",title),el("span","spacer"));
+    if(g==="model"){const k=fs.find(f=>f.key==="llm_api_key");head.append(el("span","pill "+(k&&k.isSet?"ok":"bad"),k&&k.isSet?"ключ задан":"ключ не задан"))}
+    if(g==="mail"){const h=fs.find(f=>f.key==="smtp_host");head.append(el("span","pill "+(h&&h.value?"ok":""),h&&h.value?"настроена":"письма в лог"))}
+    if(g==="login"){const c=fs.find(f=>f.key==="static_login_code");if(c&&c.isSet)head.append(el("span","pill bad","постоянный код включён"))}
+    form.append(head);
+    for(const f of fs)form.append(fieldEl(f));
+    const acts=el("div","row");
+    if(g==="model"){const b=el("button","ghost","Проверить");b.type="button";b.onclick=async()=>{b.disabled=true;cMsg(form,"Проверяю сохранённые настройки…");try{const r=await api("/settings/test",{method:"POST",timeout:((me&&me.llmTimeoutSec)||300)*1000+30000});cMsg(form,r.message,"ok")}catch(e){cMsg(form,e.message,"err")}finally{b.disabled=false}};acts.append(b)}
+    if(g==="mail"){const b=el("button","ghost","Отправить тестовое письмо");b.type="button";b.onclick=async()=>{b.disabled=true;cMsg(form,"Отправляю…");try{const r=await api("/settings/test-mail",{method:"POST",timeout:60000});cMsg(form,r.message,"ok")}catch(e){cMsg(form,e.message,"err")}finally{b.disabled=false}};acts.append(b)}
+    const save=el("button","btn","Сохранить");save.type="submit";acts.append(el("span","spacer"),save);
+    form.append(acts);const m=el("div","msg");m.hidden=true;form.append(m);
+    form.onsubmit=ev=>{
+      ev.preventDefault();const values={};
+      for(const f of fs){
+        const inp=$("c_"+f.key);if(!inp)continue;
+        if(f.type==="bool"){const v=inp.checked?"1":"0";if(v!==(f.value==="1"||f.value==="true"?"1":"0"))values[f.key]=inp.checked;continue}
+        if(f.type==="secret"){if(inp.value.trim())values[f.key]=inp.value.trim();continue}
+        const v=inp.value.trim();if(v!==String(f.value??"").trim())values[f.key]=v===""?null:v;
+      }
+      saveCfg(values,form);
+    };
+    box.append(form);
+  }
+  if(cfgEnvOnly.length)box.append(el("div","cfgnote",`Только в файле .env на сервере (нужны до запуска): ${cfgEnvOnly.join(", ")}.`));
+}
 
 async function boot(){
   try{me=await api("/me")}catch(e){if(e.code!==401&&e.code!==undefined){$("login").hidden=true;$("app").hidden=false;showMsg("Сервер недоступен: "+e.message,true)}return false}
   if(location.search)history.replaceState(null,"","/");
   goal=me.goal;$("goal").value=goal;
-  renderAccount();$("people").hidden=!me.isAdmin;$("modelForm").hidden=!me.isAdmin;
+  renderAccount();$("people").hidden=!me.isAdmin;$("cfg").hidden=!me.isAdmin;
   $("login").hidden=true;$("app").hidden=false;
   await openDay();
   return true;

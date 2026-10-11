@@ -3,8 +3,9 @@
 //   node dist/cli.js login <userId>           — sign-in link for an existing user (15 min)
 //   node dist/cli.js users                    — list users
 import { db, createLink } from "./db.js";
+import { conf } from "./config.js";
 
-const BASE_URL = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, "");
+const BASE_URL = conf("base_url").replace(/\/+$/, "");
 const [cmd, ...args] = process.argv.slice(2);
 
 if (cmd === "invite") {

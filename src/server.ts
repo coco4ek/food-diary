@@ -8,13 +8,13 @@ import {
   getDays, putDay, takeUsage, setSetting,
 } from "./db.js";
 import { estimate, llmConfig, testConnection } from "./llm.js";
+import { conf, confNum, view as configView, update as configUpdate } from "./config.js";
 import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
-import { sendCode, sendInvite, mailConfigured } from "./mail.js";
+import { sendCode, sendInvite, sendTest, mailConfigured } from "./mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
-const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
-const DAILY_LIMIT = Number(process.env.DAILY_LIMIT || 40);
-const SECURE = BASE_URL.startsWith("https://");
+// Read from settings on every use, so edits in the app apply without a restart
+const baseUrl = () => conf("base_url").replace(/\/+$/, "");
 const SID = "kkal_sid";
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
@@ -30,7 +30,7 @@ app.addHook("onSend", async (_req, reply, payload) => {
 });
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const linkUrl = (token: string) => `${BASE_URL}/i/${token}`;
+const linkUrl = (token: string) => `${baseUrl()}/i/${token}`;
 
 declare module "fastify" { interface FastifyRequest { user: User } }
 
@@ -42,7 +42,7 @@ async function requireUser(req: FastifyRequest, reply: FastifyReply) {
 
 function setSession(reply: FastifyReply, userId: number) {
   reply.setCookie(SID, createSession(userId), {
-    path: "/", httpOnly: true, sameSite: "lax", secure: SECURE, maxAge: 60 * 60 * 24 * 365,
+    path: "/", httpOnly: true, sameSite: "lax", secure: baseUrl().startsWith("https://"), maxAge: 60 * 60 * 24 * 365,
   });
 }
 
@@ -107,8 +107,8 @@ app.register(async (api) => {
   api.addHook("preHandler", requireUser);
 
   api.get("/me", async (req) => ({
-    name: req.user.name, email: req.user.email, isAdmin: !!req.user.is_admin, goal: req.user.goal, dailyLimit: DAILY_LIMIT,
-    mailConfigured: mailConfigured(),
+    name: req.user.name, email: req.user.email, isAdmin: !!req.user.is_admin, goal: req.user.goal, dailyLimit: confNum("daily_limit"),
+    mailConfigured: mailConfigured(), llmTimeoutSec: confNum("llm_timeout_sec"),
   }));
 
   api.put<{ Body: { goal?: number; name?: string } }>("/me", async (req, reply) => {
@@ -149,8 +149,9 @@ app.register(async (api) => {
       }
     }
     const date = req.body?.date && DATE.test(req.body.date) ? req.body.date : new Date().toISOString().slice(0, 10);
-    if (!takeUsage(req.user.id, date, DAILY_LIMIT)) {
-      return reply.code(429).send({ error: `Лимит ${DAILY_LIMIT} распознаваний в день исчерпан` });
+    const limit = confNum("daily_limit");
+    if (!takeUsage(req.user.id, date, limit)) {
+      return reply.code(429).send({ error: `Лимит ${limit} распознаваний в день исчерпан` });
     }
     try {
       return await estimate(text, images);
@@ -173,9 +174,9 @@ app.register(async (api) => {
       if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return reply.code(409).send({ error: "Этот человек уже пользуется дневником" });
       inviteEmail(email, req.user.id);
       let sent = false;
-      try { await sendInvite(email, BASE_URL, req.user.name); sent = mailConfigured(); }
+      try { await sendInvite(email, baseUrl(), req.user.name); sent = mailConfigured(); }
       catch (e: any) { req.log.warn({ err: e?.message }, "invite mail failed"); }
-      return { email, sent, url: BASE_URL };
+      return { email, sent, url: baseUrl() };
     }
     const name = (req.body?.name || "").trim().slice(0, 60);
     if (!name) return reply.code(400).send({ error: "Укажи email" });
@@ -214,44 +215,27 @@ app.register(async (api) => {
     return { ok: true };
   });
 
-  /* ---- model settings (admins only). The key is write-only: only its last 4 chars come back. ---- */
-  const settingsView = () => {
-    const c = llmConfig();
-    return {
-      baseUrl: c.baseUrl, model: c.model, keySource: c.keySource,
-      keyHint: c.apiKey ? "••••" + c.apiKey.slice(-4) : "",
-      thinkingOff: (c.extra as any)?.thinking?.type === "disabled",
-    };
-  };
+  /* ---- all settings (admins only). Secrets are write-only: only "set" and a hint come back. ---- */
   const adminOnly = async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.user.is_admin) return reply.code(403).send({ error: "Настройки доступны только администраторам" });
   };
 
-  api.get("/settings", { preHandler: adminOnly }, async () => settingsView());
+  api.get("/settings", { preHandler: adminOnly }, async () => ({ fields: configView(), envOnly: ["PORT", "DB_PATH", "ADMIN_EMAIL"] }));
 
-  api.put<{ Body: { baseUrl?: string; model?: string; apiKey?: string; clearKey?: boolean; thinkingOff?: boolean } }>(
-    "/settings", { preHandler: adminOnly }, async (req, reply) => {
-      const b = req.body || {};
-      if (typeof b.baseUrl === "string") {
-        const u = b.baseUrl.trim();
-        if (u && !/^https?:\/\/[^\s]+$/.test(u)) return reply.code(400).send({ error: "Адрес API должен начинаться с https://" });
-        setSetting("llm_base_url", u || null);
-      }
-      if (typeof b.model === "string") setSetting("llm_model", b.model.trim().slice(0, 120) || null);
-      if (b.clearKey) setSetting("llm_api_key", null);
-      else if (typeof b.apiKey === "string" && b.apiKey.trim()) {
-        const k = b.apiKey.trim();
-        if (k.length < 8 || k.length > 400 || /\s/.test(k)) return reply.code(400).send({ error: "Ключ выглядит неверно: без пробелов, от 8 символов" });
-        setSetting("llm_api_key", k);
-      }
-      if (typeof b.thinkingOff === "boolean") {
-        const extra: Record<string, unknown> = { ...(llmConfig().extra as any) };
-        if (b.thinkingOff) extra.thinking = { type: "disabled" }; else delete extra.thinking;
-        setSetting("llm_extra_body", Object.keys(extra).length ? JSON.stringify(extra) : null);
-      }
-      req.log.info({ by: req.user.id }, "model settings updated");
-      return settingsView();
-    });
+  api.put<{ Body: { values?: Record<string, unknown> } }>("/settings", { preHandler: adminOnly }, async (req, reply) => {
+    const err = configUpdate(req.body?.values || {});
+    if (err) return reply.code(400).send({ error: err });
+    req.log.info({ by: req.user.id, keys: Object.keys(req.body?.values || {}) }, "settings updated");
+    return { fields: configView() };
+  });
+
+  api.post("/settings/test-mail", { preHandler: adminOnly }, async (req, reply) => {
+    const to = req.user.email;
+    if (!to) return reply.code(400).send({ error: "У твоего аккаунта нет почты: привяжи её в «Аккаунте»" });
+    if (!mailConfigured()) return reply.code(400).send({ error: "Сначала укажи SMTP-сервер и сохрани" });
+    try { await sendTest(to); return { ok: true, message: `Письмо отправлено на ${to}. Проверь входящие и «Спам».` }; }
+    catch (e: any) { return reply.code(502).send({ error: "Не удалось отправить: " + (e?.response || e?.message || e) }); }
+  });
 
   api.post("/settings/test", { preHandler: adminOnly }, async (req, reply) => {
     try { return { ok: true, message: await testConnection() }; }
