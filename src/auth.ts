@@ -1,5 +1,5 @@
 import { randomInt, timingSafeEqual } from "node:crypto";
-import { db, hash, now, User, USER_COLS } from "./db.js";
+import { db, hash, now, newToken, User, USER_COLS } from "./db.js";
 import { conf, confNum } from "./config.js";
 
 const CODE_TTL = 10 * 60 * 1000;
@@ -139,6 +139,22 @@ export function ipLimit(ip: string, max = 20, windowMs = 3600_000) {
   if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((x) => t - x < windowMs)) hits.delete(k);
 }
 
-export function inviteEmail(email: string, by: number) {
-  db.prepare(`INSERT INTO email_invites (email, invited_by, created_at) VALUES (?, ?, ?) ON CONFLICT (email) DO NOTHING`).run(email, by, now());
+/**
+ * Invite an address. Returns a fresh invite key for the link in the letter (a random key, not the
+ * email itself, so nobody can put someone else's address into a link). Re-inviting rotates the key.
+ */
+export function inviteEmail(email: string, by: number): string {
+  const token = newToken();
+  db.prepare(
+    `INSERT INTO email_invites (email, invited_by, created_at, token_hash) VALUES (?, ?, ?, ?)
+     ON CONFLICT (email) DO UPDATE SET token_hash = excluded.token_hash, invited_by = excluded.invited_by, created_at = excluded.created_at`
+  ).run(email, by, now(), hash(token));
+  return token;
+}
+
+/** Which address an invite link belongs to (null if the key is unknown or already used). */
+export function inviteByToken(token: string): string | null {
+  if (!token || token.length > 100) return null;
+  const row = db.prepare(`SELECT email FROM email_invites WHERE token_hash = ?`).get(hash(token)) as { email: string } | undefined;
+  return row?.email ?? null;
 }

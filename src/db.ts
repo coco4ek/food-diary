@@ -78,6 +78,8 @@ const cols = new Set((db.prepare(`PRAGMA table_info(users)`).all() as { name: st
 if (!cols.has("email")) db.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
 if (!cols.has("disabled")) db.exec(`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`);
 if (!cols.has("last_login_at")) db.exec(`ALTER TABLE users ADD COLUMN last_login_at INTEGER`);
+const invCols = new Set((db.prepare(`PRAGMA table_info(email_invites)`).all() as { name: string }[]).map((c) => c.name));
+if (!invCols.has("token_hash")) db.exec(`ALTER TABLE email_invites ADD COLUMN token_hash TEXT`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)`);
 
 export const getSetting = (key: string): string | undefined =>

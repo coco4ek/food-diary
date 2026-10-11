@@ -9,7 +9,7 @@ import {
 } from "./db.js";
 import { estimate, llmConfig, testConnection } from "./llm.js";
 import { conf, confNum, view as configView, update as configUpdate } from "./config.js";
-import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
+import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, inviteByToken, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
 import { sendCode, sendInvite, sendTest, mailConfigured } from "./mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -64,6 +64,14 @@ const authFail = (reply: FastifyReply, e: any) => {
   }
   throw e;
 };
+
+// invite link → which address to send the code to (so the person doesn't type it)
+app.get<{ Querystring: { t?: string } }>("/api/auth/invite", async (req, reply) => {
+  try { ipLimit(req.ip, 60); } catch (e) { return authFail(reply, e); }
+  const email = inviteByToken(String(req.query.t || ""));
+  if (!email) return reply.code(404).send({ error: "Приглашение не найдено или уже использовано. Войди по почте или попроси новое приглашение." });
+  return { email };
+});
 
 app.post<{ Body: { email?: string } }>("/api/auth/request", async (req, reply) => {
   const email = normEmail(req.body?.email);
@@ -176,11 +184,11 @@ app.register(async (api) => {
       const email = normEmail(raw);
       if (!isEmail(email)) return reply.code(400).send({ error: "Проверь адрес почты" });
       if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return reply.code(409).send({ error: "Этот человек уже пользуется дневником" });
-      inviteEmail(email, req.user.id);
+      const url = `${baseUrl()}/?invite=${inviteEmail(email, req.user.id)}`;
       let sent = false;
-      try { await sendInvite(email, baseUrl(), req.user.name); sent = mailConfigured(); }
+      try { await sendInvite(email, url, req.user.name); sent = mailConfigured(); }
       catch (e: any) { req.log.warn({ err: e?.message }, "invite mail failed"); }
-      return { email, sent, url: baseUrl() };
+      return { email, sent, url };
     }
     const name = (req.body?.name || "").trim().slice(0, 60);
     if (!name) return reply.code(400).send({ error: "Укажи email" });

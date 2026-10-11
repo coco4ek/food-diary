@@ -52,10 +52,10 @@ export function sendInvite(to: string, url: string, from: string) {
   return send(
     to,
     `${from} приглашает тебя в «${appName()}»`,
-    `${from} приглашает тебя вести дневник калорий по фото.\n\nОткрой ${url} и войди по этому адресу почты, код придёт письмом.`,
+    `${from} приглашает тебя вести дневник калорий по фото.\n\nОткрой ссылку: ${url}\nСразу после этого на эту почту придёт код для входа.`,
     shell(`<p style="margin:0 0 12px"><b>${from.replace(/</g, "&lt;")}</b> приглашает тебя вести дневник калорий: фотографируешь еду, а калории и БЖУ считаются сами.</p>
 <p style="margin:0 0 16px"><a href="${url}" style="display:inline-block;background:#C8442F;color:#fff;text-decoration:none;padding:10px 18px;border-radius:999px;font-weight:600">Открыть дневник</a></p>
-<p style="margin:0;font-size:14px;color:#66705F">Войди по адресу ${to}, код придёт письмом.</p>`)
+<p style="margin:0;font-size:14px;color:#66705F">После нажатия на ${to} придёт код из 6 цифр — введи его, и дневник откроется.</p>`)
   );
 }
 

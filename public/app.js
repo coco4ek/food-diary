@@ -454,9 +454,25 @@ let goalT;$("goal").oninput=()=>{const v=+$("goal").value;if(v>=800&&v<=6000){go
 function loginMsg(t,err){const m=$("loginMsg");m.hidden=!t;m.textContent=t||"";m.classList.toggle("err",!!err)}
 function showLogin(){
   $("app").hidden=true;$("login").hidden=false;
+  const inv=new URLSearchParams(location.search).get("invite");
+  if(inv&&!showLogin.invite){showLogin.invite=1;openInvite(inv);return}
   if(new URLSearchParams(location.search).get("link")==="invalid")loginMsg("Ссылка недействительна: она уже использована или устарела. Войди по почте.",true);
   try{const last=localStorage.getItem("kcal:email");if(last&&!$("lEmail").value)$("lEmail").value=last}catch(e){}
   setTimeout(()=>($("emailForm").hidden?$("lCode"):$("lEmail")).focus(),50);
+}
+/* invite link: the address is known — send the code right away and ask only for the code */
+async function openInvite(token){
+  $("emailForm").hidden=true;$("codeForm").hidden=true;loginMsg("Открываю приглашение…");
+  try{
+    const {email}=await api("/auth/invite?t="+encodeURIComponent(token));
+    history.replaceState(null,"","/");
+    $("lEmail").value=email;
+    if(!(await requestCode())){$("emailForm").hidden=false}
+    else loginMsg("Мы отправили код на твою почту — введи его, и дневник откроется.");
+  }catch(e){
+    history.replaceState(null,"","/");
+    $("emailForm").hidden=false;loginMsg(e.message,true);setTimeout(()=>$("lEmail").focus(),50);
+  }
 }
 let resendT=null;
 function startResend(sec){
@@ -550,7 +566,11 @@ async function loadPeople(){
     for(const i of data.invites){
       const r=el("div","urow"),w=el("div","who");w.append(el("b",null,i.email),el("small",null,"приглашён "+ago(i.createdAt)));
       const x=el("button","ghost","Отозвать");x.onclick=async()=>{try{await api("/invites/"+encodeURIComponent(i.email),{method:"DELETE"});loadPeople()}catch(e){iMsg(e.message,"err")}};
-      const acts=el("div","acts");acts.append(x);r.append(w,acts);il.append(r);
+      const again=el("button","ghost","Отправить ещё раз");again.onclick=async()=>{again.disabled=true;
+        try{const r2=await api("/invites",{method:"POST",body:{email:i.email}});
+          if(r2.sent)iMsg(`Новое приглашение отправлено на ${i.email}.`,"ok");else showLink(r2.url,`Письмо не ушло (почта не настроена). Ссылка для ${i.email}:`)}
+        catch(e){iMsg(e.message,"err")}finally{again.disabled=false}};
+      const acts=el("div","acts");acts.append(again,x);r.append(w,acts);il.append(r);
     }
   }
 }
@@ -559,7 +579,9 @@ $("inviteForm").onsubmit=async ev=>{
   ev.preventDefault();const email=$("inviteEmail").value.trim();if(!email){$("inviteEmail").focus();return}
   $("inviteBtn").disabled=true;
   try{const r=await api("/invites",{method:"POST",body:{email}});$("inviteEmail").value="";
-    iMsg(r.sent?`Приглашение отправлено на ${r.email}. Он войдёт по коду из письма.`:`${r.email} может входить: пусть откроет ${r.url} и введёт эту почту. Письмо не отправлено — почта на сервере не настроена.`,"ok");loadPeople()}
+    if(r.sent)iMsg(`Приглашение отправлено на ${r.email}. По ссылке из письма сразу откроется ввод кода.`,"ok");
+    else{iMsg("");showLink(r.url,`Почта на сервере не настроена, письмо не ушло. Перешли эту ссылку для ${r.email} сам — по ней сразу откроется ввод кода.`)}
+    loadPeople()}
   catch(e){iMsg(e.message,"err")}finally{$("inviteBtn").disabled=false}
 };
 
