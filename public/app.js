@@ -77,7 +77,7 @@ function renderSeg(){
 }
 function renderDay(){
   const today=new Date();today.setHours(12,0,0,0);
-  $("dayLabel").textContent=dayName(day);
+  if(view==="diary")setTitle();
   $("next").disabled=day>=today;
   const t=totals(dayData.entries);
   const left=Math.round(goal-t.kcal);
@@ -96,35 +96,35 @@ function renderDay(){
   }
   const box=$("meals");box.innerHTML="";
   if(!dayData.entries.length){
-    box.innerHTML=`<div class="empty">Пока пусто. Сфотографируй тарелку — продукты и калории появятся здесь.</div>`;return;
+    box.innerHTML=`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/></svg>Пока пусто. Нажми на камеру внизу и сфотографируй тарелку.</div>`;return;
   }
   for(const [k,l] of MEALS){
     const es=dayData.entries.filter(e=>e.meal===k); if(!es.length)continue;
     const sec=document.createElement("div");sec.className="meal";
     const kc=Math.round(totals(es).kcal);
-    sec.innerHTML=`<h3>${l}<span>${kc} ккал</span></h3>`;
+    sec.innerHTML=`<h3>${l}<span>${kc} ккал</span></h3>`;const list=el("div","mlist");sec.append(list);
     for(const e of es) e.dishes.forEach((d,di)=>{
       const t=sumI(d.items), key2=e.id+":"+di;
       const multi=d.items.length>1||(d.items[0]&&d.items[0].name!==d.name);
       const wrap=el("div","dish"), row=el("div","item");
-      const nm=el(multi?"button":"div","nm");
+      const nm=el(multi?"button":"div","nm");a11yName(nm);
       const txt=el("div");txt.append(el("div",null,d.name),el("small",null,`${macroTxt(t)}${multi?` · ${d.items.length} ингр.`:""}`));
       nm.append(el("span","chev",multi?"▸":""),txt);
       const gb=gramsBtn(t.grams,d.name,v=>mutate(e.id,en=>{const dd=en.dishes[di],tg=sumI(dd.items).grams;if(tg>0)dd.items.forEach(i=>scale(i,v/tg));else dd.items[0].grams=v}));
       row.append(nm,gb,el("div","k",Math.round(t.kcal)),xbtn("Удалить "+d.name,()=>removeDish(e.id,di)));
-      wrap.append(row);
+      wrap.append(swipe(row,()=>removeDish(e.id,di)));
       if(multi){
         const ings=el("div","ings");const open=openSet.has(key2);ings.hidden=!open;nm.setAttribute("aria-expanded",open);
         d.items.forEach((it,ii)=>{
           const r=el("div","ing"),a=el("div");
           a.append(el("div",null,it.name),el("small",null,macroTxt(it)));
           const ib=gramsBtn(it.grams,it.name,v=>mutate(e.id,en=>{const x=en.dishes[di].items[ii];if(x.grams>0)scale(x,v/x.grams);else x.grams=v}));
-          r.append(a,ib,el("div","k",Math.round(it.kcal)),xbtn("Удалить "+it.name,()=>removeIng(e.id,di,ii)));ings.append(r);
+          r.append(a,ib,el("div","k",Math.round(it.kcal)),xbtn("Удалить "+it.name,()=>removeIng(e.id,di,ii)));ings.append(swipe(r,()=>removeIng(e.id,di,ii)));
         });
-        nm.onclick=()=>{const o=!openSet.has(key2);o?openSet.add(key2):openSet.delete(key2);ings.hidden=!o;nm.setAttribute("aria-expanded",o)};
+        nm.onclick=()=>{if(swiping)return;const o=!openSet.has(key2);o?openSet.add(key2):openSet.delete(key2);ings.hidden=!o;nm.setAttribute("aria-expanded",o)};
         wrap.append(ings);
       }
-      sec.append(wrap);
+      list.append(wrap);
     });
     box.append(sec);
   }
@@ -136,15 +136,20 @@ async function renderWeek(){
   const data=days.map(d=>cache[key(d)]);
   const vals=data.map(x=>totals(x.entries).kcal);
   const max=Math.max(goal*1.25,...vals);
+  const filled=vals.filter(v=>v>0),avg=filled.length?filled.reduce((a,b)=>a+b,0)/filled.length:0,inGoal=filled.filter(v=>v<=goal*1.05).length;
+  const ws=$("weekStats");ws.innerHTML="";
+  for(const [v,s] of [[filled.length?Math.round(avg):"—","ккал в среднем"],[`${inGoal}/${filled.length||0}`,"дней в цели"],[filled.length?Math.round(Math.max(...filled)):"—","максимум"]]){
+    const c=el("div","wstat");c.append(el("b",null,String(v)),el("small",null,s));ws.append(c)}
+  if(view==="week")setTitle();
   box.innerHTML="";
   const gl=document.createElement("div");gl.className="goalline";
-  // column area = 120px minus labels (~34px)
-  gl.style.bottom=(34+(120-34)*goal/max)+"px";box.append(gl);
+  // column area = box height minus the two label lines (~36px)
+  const H=box.clientHeight||170;gl.style.bottom=(36+(H-36)*goal/max)+"px";box.append(gl);
   days.forEach((d,i)=>{
     const b=document.createElement("button");b.className="wk"+(key(d)===key(day)?" cur":"");
     b.setAttribute("aria-label",`${dayName(d)}: ${Math.round(vals[i])} ккал`);
     b.innerHTML=`<div class="col"><i class="${vals[i]>goal?"over":""}" style="height:${vals[i]/max*100}%"></i></div><b>${vals[i]?Math.round(vals[i]):"—"}</b><small>${d.toLocaleDateString("ru-RU",{weekday:"short"})}</small>`;
-    b.onclick=()=>{day=d;openDay()};box.append(b);
+    b.onclick=()=>{day=d;haptic();go("diary");openDay()};box.append(b);
   });
 }
 async function openDay(){
@@ -191,24 +196,32 @@ function renderDraft(){
   updTotal();
   $("note").hidden=!draftNote;$("note").textContent=draftNote;
 }
-function showMsg(t,err){const m=$("msg");m.hidden=!t;m.textContent=t||"";m.classList.toggle("err",!!err)}
+function showMsg(t,err,working){
+  if(!sheetOpen()){if(t)toast(t,err);return}
+  const m=$("msg");m.hidden=!t;m.className=working?"working":"msg"+(err?" err":"");m.textContent="";
+  if(working){m.append(el("span","spin"),el("span",null,t))}else m.textContent=t||"";
+}
+let toastT;
+function toast(t,err){const x=$("toast");x.textContent=t;x.classList.toggle("err",!!err);x.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>x.classList.remove("on"),err?4200:2400)}
+const haptic=(ms=8)=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
 
 async function estimate(){
   const text=$("text").value.trim();
   if(!text&&!photos.length){showMsg("Сфотографируй еду или опиши её словами.",true);return}
   $("calc").disabled=true;$("shoot").classList.add("busy");
   const what=photos.length?"Смотрю на фото и считаю":"Считаю",t0=Date.now();
-  const tick=()=>{const s=Math.round((Date.now()-t0)/1000);showMsg(s<5?what+"…":`${what}… ${s} с${s>40?" (модель думает, это нормально)":""}`)};tick();const timer=setInterval(tick,1000);
+  const tick=()=>{const s=Math.round((Date.now()-t0)/1000);showMsg(s<5?what+"…":`${what}… ${s} с${s>40?" — модель думает, это нормально":""}`,false,true)};tick();const timer=setInterval(tick,1000);
   try{
     const images=await Promise.all(photos.map(p=>toDataURL(p.blob)));
     const res=await api("/estimate",{method:"POST",timeout:((me&&me.llmTimeoutSec)||300)*1000+30000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
-    draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();
+    draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();haptic(12);
+    $("more").open=false;
   }catch(e){
     if(e.code!==401)showMsg(e.message||String(e),true);
-    if(e.code===503&&me&&me.isAdmin)toggleSettings(true);
+    if(e.code===503&&me&&me.isAdmin){closeSheet();go("settings")}
   }finally{clearInterval(timer);$("calc").disabled=false;$("shoot").classList.remove("busy")}
 }
 async function saveDraft(){ try{ await saveDraftInner() }catch(e){ console.error(e); showMsg("Не удалось добавить: "+(e.message||e),true) } }
@@ -218,7 +231,9 @@ async function saveDraftInner(){
   if(!dishes.length){showMsg("Укажи калории хотя бы для одного ингредиента.",true);return}
   const k=key(day); const d=await getDay(k);
   d.entries.push({id:uidGen(),meal,text:$("text").value.trim(),at:Date.now(),dishes});
+  const kc=Math.round(sumI(dishes.flatMap(x=>x.items)).kcal),ml=(MEALS.find(m=>m[0]===meal)||[0,""])[1];
   draft=[];draftNote="";$("text").value="";clearPhoto();renderDraft();showMsg("");
+  closeSheet();go("diary");haptic(15);toast(`${ml}: +${kc} ккал`);
   renderDay();renderWeek();
   await store("day-"+k,{entries:d.entries});
 }
@@ -240,6 +255,8 @@ function renderThumbs(){
   photos.forEach((p,i)=>{const f=document.createElement("figure");const im=document.createElement("img");im.src=p.url;im.alt="Фото еды "+(i+1);
     const x=document.createElement("button");x.textContent="×";x.setAttribute("aria-label","Убрать фото");x.onclick=()=>{URL.revokeObjectURL(p.url);photos.splice(i,1);renderThumbs()};
     f.append(im,x);box.append(f)});
+  if(photos.length&&photos.length<maxPhotos){const a=el("label","addphoto");a.htmlFor="photo";a.title="Добавить ещё фото";
+    a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';box.append(a)}
 }
 const toDataURL=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(b)});
 /* phone photos are large: shrink to 1568px JPEG before sending */
@@ -253,10 +270,108 @@ async function shrink(file){
   }catch(e){return file}
 }
 
+/* ---------- screens ---------- */
+let view="diary";
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const dateLong=d=>d.toLocaleDateString("ru-RU",{day:"numeric",month:"long",weekday:"long"});
+function setTitle(){
+  const t=$("dayLabel"),s=$("subtitle");
+  if(view==="diary"){const n=dayName(day);t.textContent=n.charAt(0).toUpperCase()+n.slice(1);s.textContent=["Сегодня","Вчера"].includes(n)?dateLong(day):""}
+  else if(view==="week"){t.textContent="Неделя";const a=addDays(day,-6);s.textContent=`${a.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})} — ${day.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}`}
+  else{t.textContent="Настройки";s.textContent=""}
+}
+function go(v,replace){
+  if(v===view&&!replace)return;
+  view=v;
+  $("vDiary").hidden=v!=="diary";$("vWeek").hidden=v!=="week";$("settings").hidden=v!=="settings";
+  const nav=v!=="settings";$("prev").hidden=!nav;$("next").hidden=!nav;$("gear").hidden=!nav;$("back").hidden=nav;
+  document.querySelectorAll(".tab").forEach(t=>t.dataset.view===v?t.setAttribute("aria-current","page"):t.removeAttribute("aria-current"));
+  document.body.classList.toggle("pushed",v==="settings");
+  setTitle();window.scrollTo(0,0);
+  if(v==="settings"){if(me&&me.isAdmin){loadConfig();loadPeople()}if(!replace)history.pushState({v:"settings"},"")}
+  if(v==="week")renderWeek();
+  if(v==="diary")renderDay();
+}
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{haptic();go(t.dataset.view)});
+function shiftDay(n){
+  const today=new Date();today.setHours(12,0,0,0);
+  let d=addDays(day,n);if(d>today)d=today;if(key(d)===key(day))return;
+  day=d;haptic();openDay();
+}
+window.addEventListener("scroll",()=>$("nav").classList.toggle("scrolled",scrollY>4),{passive:true});
+
+/* ---------- bottom sheet ---------- */
+const sheetOpen=()=>!$("sheet").hidden;
+function openSheet(mode){
+  const s=$("sheet"),sc=$("scrim");
+  if(!sheetOpen()){
+    s.hidden=false;sc.hidden=false;void s.offsetHeight;s.classList.add("on");sc.classList.add("on");
+    document.body.style.overflow="hidden";history.pushState({sheet:1},"");
+  }
+  $("sheetTitle").textContent=mode==="text"?"Без фото":"Новая запись";
+  if(mode==="text"){$("more").open=true;setTimeout(()=>$("text").focus(),280)}
+}
+function closeSheet(fromHistory){
+  if(!sheetOpen())return;
+  const s=$("sheet"),sc=$("scrim");s.style.transform="";s.classList.remove("on");sc.classList.remove("on");document.body.style.overflow="";
+  setTimeout(()=>{if(!s.classList.contains("on")){s.hidden=true;sc.hidden=true}},320);
+  if(!fromHistory&&history.state&&history.state.sheet)history.back();
+}
+$("sheetClose").onclick=()=>closeSheet();
+$("scrim").onclick=()=>closeSheet();
+$("addText").onclick=()=>{haptic();openSheet("text")};
+window.addEventListener("popstate",()=>{if(sheetOpen()){closeSheet(true);return}if(view==="settings")go("diary",true)});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&sheetOpen())closeSheet()});
+// drag the sheet down by its header to dismiss
+(()=>{let y0=null,dy=0;const s=$("sheet");
+  const start=e=>{y0=e.touches[0].clientY;dy=0;s.classList.add("drag")};
+  const move=e=>{if(y0==null)return;dy=Math.max(0,e.touches[0].clientY-y0);s.style.transform=`translateY(${dy}px)`};
+  const end=()=>{if(y0==null)return;s.classList.remove("drag");s.style.transform="";if(dy>110)closeSheet();y0=null};
+  for(const h of [$("sheetHead"),s.querySelector(".grab")]){h.addEventListener("touchstart",start,{passive:true});h.addEventListener("touchmove",move,{passive:true});h.addEventListener("touchend",end)}
+})();
+
+/* ---------- gestures: swipe a row left to delete, swipe the day sideways ---------- */
+let swiping=false,openRow=null;
+function swipe(row,onDelete){
+  const box=el("div","sw"),del=el("button","swdel","Удалить"),c=el("div","swc");
+  del.onclick=()=>{haptic(15);onDelete()};del.tabIndex=-1;
+  c.append(row);box.append(del,c);
+  let x0=null,y0=0,dx=0,lock=null,base=0;
+  c.addEventListener("touchstart",e=>{if(openRow&&openRow!==c){openRow.style.transform="";openRow=null}x0=e.touches[0].clientX;y0=e.touches[0].clientY;dx=0;lock=null;base=c===openRow?-88:0},{passive:true});
+  c.addEventListener("touchmove",e=>{if(x0==null)return;const mx=e.touches[0].clientX-x0,my=e.touches[0].clientY-y0;
+    if(lock==null&&(Math.abs(mx)>8||Math.abs(my)>8))lock=Math.abs(mx)>Math.abs(my)?"x":"y";
+    if(lock!=="x")return;swiping=true;dx=Math.min(0,Math.max(-120,base+mx));c.classList.add("drag");c.style.transform=`translateX(${dx}px)`},{passive:true});
+  c.addEventListener("touchend",()=>{c.classList.remove("drag");if(lock==="x"){const open=dx<-44;c.style.transform=open?"translateX(-88px)":"";openRow=open?c:null;if(open)haptic()}
+    x0=null;setTimeout(()=>swiping=false,50)});
+  return box;
+}
+document.addEventListener("touchstart",e=>{if(openRow&&!openRow.parentNode.contains(e.target)){openRow.style.transform="";openRow=null}},{passive:true});
+function a11yName(){}
+(()=>{let x0=null,y0=0,skip=false;const v=$("vDiary");
+  v.addEventListener("touchstart",e=>{skip=!!e.target.closest(".sw,input,textarea,.dial .goal");x0=e.touches[0].clientX;y0=e.touches[0].clientY},{passive:true});
+  v.addEventListener("touchend",e=>{if(x0==null||skip)return;const t=e.changedTouches[0],dx=t.clientX-x0,dy=t.clientY-y0;x0=null;
+    if(Math.abs(dx)>70&&Math.abs(dy)<45){shiftDay(dx>0?-1:1)}},{passive:true});
+})();
+
+/* ---------- "add to home screen" hint ---------- */
+let installEvt=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;setupInstallHint()});
+function setupInstallHint(){
+  const standalone=matchMedia("(display-mode: standalone)").matches||navigator.standalone;
+  let dismissed=false;try{dismissed=localStorage.getItem("kcal:installHint")==="0"}catch(e){}
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const box=$("install");if(standalone||dismissed||(!ios&&!installEvt)){box.hidden=true;return}
+  const how=$("installHow");how.textContent="";
+  if(installEvt){const b=el("button","linkbtn","Установить");b.onclick=async()=>{installEvt.prompt();await installEvt.userChoice.catch(()=>0);installEvt=null;box.hidden=true};how.append(b)}
+  else how.textContent="Нажми «Поделиться» внизу Safari, затем «На экран „Домой“».";
+  box.hidden=false;
+}
+$("installClose").onclick=()=>{$("install").hidden=true;try{localStorage.setItem("kcal:installHint","0")}catch(e){}};
+
 /* ---------- wiring ---------- */
 renderSeg();
-$("prev").onclick=()=>{day=new Date(day);day.setDate(day.getDate()-1);openDay()};
-$("next").onclick=()=>{day=new Date(day);day.setDate(day.getDate()+1);openDay()};
+$("prev").onclick=()=>shiftDay(view==="week"?-7:-1);
+$("next").onclick=()=>shiftDay(view==="week"?7:1);
 $("calc").onclick=estimate;
 $("text").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey))estimate()});
 $("save").onclick=saveDraft;
@@ -265,6 +380,7 @@ $("manual").onclick=()=>{draftNote="";$("addRow").click()};
 $("photo").onchange=async()=>{
   const fs=[...$("photo").files].slice(0,Math.max(0,maxPhotos-photos.length));$("photo").value="";
   if(!fs.length)return;
+  openSheet("photo");
   for(const f of fs){const b=await shrink(f);photos.push({blob:b,url:URL.createObjectURL(b)})}
   renderThumbs();estimate();
 };
@@ -294,7 +410,11 @@ async function requestCode(){
     $("lTo").textContent=email;$("emailForm").hidden=true;$("codeForm").hidden=false;$("lCode").value="";$("lCode").focus();
     startResend(r.resendIn||60);return true;
   }catch(e){
-    if(e.code===429&&e.data&&e.data.retryAfter&&!$("codeForm").hidden)startResend(e.data.retryAfter);
+    // a code was sent less than a minute ago: go straight to entering it
+    if(e.code===429&&e.data&&e.data.retryAfter&&e.data.retryAfter<=60){
+      $("lTo").textContent=email;$("emailForm").hidden=true;$("codeForm").hidden=false;$("lCode").focus();startResend(e.data.retryAfter);
+      loginMsg("Код уже отправлен — введи его из последнего письма.");return true;
+    }
     loginMsg(e.message,true);return false;
   }finally{$("lSend").disabled=false}
 }
@@ -320,6 +440,7 @@ $("deviceLink").onclick=async()=>{try{const {url}=await api("/login-link",{metho
 $("logout").onclick=async()=>{try{await api("/logout",{method:"POST"})}catch(e){}location.href="/"};
 function renderAccount(){
   $("who").textContent=me.name;
+  const letter=(me.name||me.email||"?").trim().charAt(0)||"?";$("avatar").textContent=letter;$("gear").textContent=letter;
   $("whoEmail").textContent=me.email?`Вход по почте ${me.email}`:"";
   $("attachForm").hidden=!!me.email;
 }
@@ -379,12 +500,8 @@ $("inviteForm").onsubmit=async ev=>{
 };
 
 /* ---------- settings panel ---------- */
-function toggleSettings(open){
-  const p=$("settings");open=open??p.hidden;p.hidden=!open;$("gear").setAttribute("aria-expanded",open);
-  if(open){if(me&&me.isAdmin){loadConfig();loadPeople()}p.scrollIntoView({behavior:"smooth",block:"start"})}
-}
-$("gear").onclick=()=>toggleSettings();
-$("closeSettings").onclick=()=>toggleSettings(false);
+$("gear").onclick=()=>{haptic();go("settings")};
+$("back").onclick=()=>history.state&&history.state.v==="settings"?history.back():go("diary");
 /* ---------- settings (admins): forms generated from the server's field list ---------- */
 const GROUPS=[["model","Модель распознавания"],["limits","Лимиты"],["mail","Почта"],["site","Сайт"],["login","Вход"]];
 const SRC={app:"задано здесь",env:"из .env",default:"по умолчанию"};
@@ -463,11 +580,12 @@ function renderConfig(){
 }
 
 async function boot(){
-  try{me=await api("/me")}catch(e){if(e.code!==401&&e.code!==undefined){$("login").hidden=true;$("app").hidden=false;showMsg("Сервер недоступен: "+e.message,true)}return false}
+  try{me=await api("/me")}catch(e){if(e.code!==401&&e.code!==undefined){$("login").hidden=true;$("app").hidden=false;toast("Сервер недоступен: "+e.message,true)}return false}
   if(location.search)history.replaceState(null,"","/");
   goal=me.goal;$("goal").value=goal;
   renderAccount();$("people").hidden=!me.isAdmin;$("cfg").hidden=!me.isAdmin;
   $("login").hidden=true;$("app").hidden=false;
+  go(location.hash==="#week"?"week":"diary",true);setupInstallHint();
   await openDay();
   return true;
 }

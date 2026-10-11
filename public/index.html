@@ -2,233 +2,302 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>Дневник калорий</title>
-<meta name="theme-color" content="#C8442F">
+<meta name="theme-color" content="#EEF1EC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121612" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="ккал">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&display=swap">
+<meta name="format-detection" content="telephone=no">
 <style>
-html{-webkit-text-size-adjust:100%}
-:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-body{margin:0;font:14px/1.45 system-ui,sans-serif}
-img{max-width:100%}
-[hidden]{display:none!important}
-</style>
-<style>
-/* Layout: one narrow column like a phone app — day header, remaining-kcal dial, input, meals, week strip */
+/* Layout: app shell — sticky nav bar on top, scrolling view, tab bar with a camera button at the bottom,
+   a bottom sheet for adding food. System fonts so it reads like a native iOS/Android app. */
 :root{
-  --bg:#EEF1EC; --surface:#FFFFFF; --ink:#18211A; --muted:#66705F; --line:#D8DED3;
-  --accent:#C8442F; --accent-ink:#FFFFFF; --soft:#E3E8DF;
+  --bg:#EEF1EC; --surface:#FFFFFF; --ink:#18211A; --muted:#66705F; --line:#DCE2D7; --sep:#E6EBE2;
+  --accent:#C8442F; --accent-ink:#FFFFFF; --soft:#E3E8DF; --press:#E9EEE5;
   --p:#3A66C4; --f:#D39A1E; --c:#3E8C5A; --warn:#B3261E;
-  --display:"Unbounded", "Arial Black", system-ui, sans-serif;
-  --body:"Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --r:14px;
+  --bar:rgba(238,241,236,.82); --scrim:rgba(10,14,10,.38);
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --num:ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --r:16px;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  --tabh:58px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#121612; --surface:#1B211C; --ink:#E7ECE4; --muted:#98A291; --line:#2C352D;
-  --accent:#E8634B; --accent-ink:#1A0D0A; --soft:#242B25;
-  --p:#7AA2F0; --f:#E9B84E; --c:#6CC28A; --warn:#F2847B; color-scheme:dark}}
+  --bg:#0E120E; --surface:#1A1F1A; --ink:#E9EEE6; --muted:#97A190; --line:#2B332B; --sep:#262D26;
+  --accent:#EC6A50; --accent-ink:#1A0D0A; --soft:#242B24; --press:#232A23;
+  --p:#7FA6F2; --f:#EDBB52; --c:#6FC58C; --warn:#F28A80;
+  --bar:rgba(14,18,14,.8); --scrim:rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#121612; --surface:#1B211C; --ink:#E7ECE4; --muted:#98A291; --line:#2C352D;
-  --accent:#E8634B; --accent-ink:#1A0D0A; --soft:#242B25;
-  --p:#7AA2F0; --f:#E9B84E; --c:#6CC28A; --warn:#F2847B; color-scheme:dark}
+  --bg:#0E120E; --surface:#1A1F1A; --ink:#E9EEE6; --muted:#97A190; --line:#2B332B; --sep:#262D26;
+  --accent:#EC6A50; --accent-ink:#1A0D0A; --soft:#242B24; --press:#232A23;
+  --p:#7FA6F2; --f:#EDBB52; --c:#6FC58C; --warn:#F28A80;
+  --bar:rgba(14,18,14,.8); --scrim:rgba(0,0,0,.55); color-scheme:dark}
 
-*{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums}
-.wrap{max-width:620px;margin:0 auto;padding-inline:16px;padding-block:18px 48px;display:flex;flex-direction:column;gap:18px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%;height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:16px/1.4 var(--font);font-variant-numeric:tabular-nums;
+  overscroll-behavior-y:none;touch-action:manipulation;-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+img{max-width:100%}
 button,input,select,textarea{font:inherit;color:inherit}
-button{cursor:pointer}
+button,label.fab,.tab{cursor:pointer;-webkit-user-select:none;user-select:none}
+input,textarea{font-size:16px} /* 16px+ stops iOS zooming into fields */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.num{font-family:var(--num)}
+.label{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.spacer{flex:1}
+.msg{font-size:14px;color:var(--muted)}
+.msg.err{color:var(--warn)}
+.msg.ok{color:var(--c)}
 
-/* header */
-.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.brand{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.01em}
-.daynav{display:flex;align-items:center;gap:4px}
-.daynav button{background:none;border:1px solid var(--line);border-radius:999px;width:34px;height:34px;display:grid;place-items:center}
-.daynav button:disabled{opacity:.35;cursor:default}
-.daynav .d{min-width:118px;text-align:center;font-weight:600}
+/* ---------- buttons ---------- */
+.btn{border:none;border-radius:12px;padding:12px 18px;font-weight:600;font-size:16px;background:var(--accent);color:var(--accent-ink);min-height:44px}
+.btn:disabled{opacity:.4}
+.ghost{border:none;background:var(--soft);border-radius:10px;padding:9px 14px;font-weight:600;font-size:15px;min-height:40px;color:var(--ink)}
+.ghost.danger,.danger{color:var(--warn)}
+.linkbtn{border:none;background:none;padding:8px 0;color:var(--accent);font-weight:600;font-size:15px;min-height:40px}
+.linkbtn:disabled{color:var(--muted)}
+.btn:active,.ghost:active,.linkbtn:active,.tab:active,.iconbtn:active{opacity:.6}
+.fab:active{transform:translateX(-50%) scale(.94)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
-/* dial */
-.dial{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
-.ring{position:relative;width:150px;height:150px}
+/* ---------- nav bar ---------- */
+.nav{position:sticky;top:0;z-index:20;padding:calc(var(--safe-t) + 6px) 16px 8px;background:var(--bar);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid transparent;transition:border-color .2s}
+.nav.scrolled{border-bottom-color:var(--line)}
+.navrow{display:flex;align-items:center;gap:8px;min-height:44px}
+.ttl{flex:1;min-width:0}
+.ttl h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ttl small{display:block;font-size:13px;color:var(--muted);margin-top:1px}
+.iconbtn{width:40px;height:40px;border-radius:50%;border:none;background:var(--soft);display:grid;place-items:center;flex:none;padding:0;color:var(--ink)}
+.iconbtn:disabled{opacity:.3}
+.iconbtn svg{width:20px;height:20px}
+.navbtn{border:none;background:none;color:var(--accent);font-size:17px;padding:8px 4px;min-height:44px;display:flex;align-items:center;gap:2px;font-weight:500}
+
+/* ---------- views ---------- */
+.views{padding:12px 16px calc(var(--tabh) + var(--safe-b) + 40px)}
+.view{display:flex;flex-direction:column;gap:16px;animation:fade .2s ease}
+@keyframes fade{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+.card{background:var(--surface);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px}
+.group-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin:4px 16px -8px}
+
+/* ---------- day summary ---------- */
+.dial{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;background:var(--surface);border-radius:var(--r);padding:18px 16px}
+.ring{position:relative;width:132px;height:132px}
 .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle.prog{transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1)}
 .ring .center{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
-.big{font-family:var(--display);font-weight:700;font-size:30px;line-height:1;letter-spacing:-.02em}
+.big{font-family:var(--num);font-weight:700;font-size:32px;line-height:1;letter-spacing:-.02em}
 .big.over{color:var(--warn)}
 .sub{font-size:12px;color:var(--muted);margin-top:4px}
 .stats{display:flex;flex-direction:column;gap:10px;min-width:0}
-.eaten{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.eaten b{font-family:var(--display);font-size:20px}
-.goal{border:none;background:none;border-bottom:1px dashed var(--muted);width:4.5em;padding:0;text-align:right;color:var(--muted)}
-.macro{display:grid;grid-template-columns:62px 1fr auto;gap:8px;align-items:center;font-size:13px}
+.eaten{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.eaten b{font-family:var(--num);font-size:22px;color:var(--ink)}
+.goal{border:none;background:var(--soft);border-radius:8px;width:5em;padding:3px 6px;text-align:right;font-family:var(--num);font-size:16px}
+.macro{display:grid;grid-template-columns:70px 1fr auto;gap:8px;align-items:center;font-size:13px}
+.macro span:last-child{color:var(--muted);font-family:var(--num)}
 .bar{height:6px;background:var(--soft);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:3px}
+.bar i{display:block;height:100%;border-radius:3px;transition:width .5s ease}
+@media (max-width:360px){.dial{grid-template-columns:1fr;justify-items:center}.stats{width:100%}}
 
-/* input */
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px}
-textarea{width:100%;min-height:72px;resize:vertical;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.seg{display:flex;background:var(--soft);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap}
-.seg button{border:none;background:none;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:600;color:var(--muted)}
-.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
-.btn{border:none;border-radius:999px;padding:10px 18px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
-.btn:disabled{opacity:.5;cursor:default}
-.ghost{border:1px solid var(--line);background:none;border-radius:999px;padding:8px 14px;font-weight:600;font-size:13px}
-.spacer{flex:1}
-.chips{display:flex;gap:6px;flex-wrap:wrap}
-.chip{border:1px dashed var(--line);background:none;border-radius:999px;padding:5px 10px;font-size:12.5px;color:var(--muted)}
-.shoot{display:flex;align-items:center;gap:14px;padding:18px;border-radius:12px;background:var(--accent);color:var(--accent-ink);cursor:pointer}
-.shoot b{display:block;font-family:var(--display);font-weight:500;font-size:16px}
-.shoot small{display:block;font-size:12.5px;opacity:.85}
-.shoot.busy{opacity:.6;pointer-events:none}
-.thumbs{display:flex;gap:8px;flex-wrap:wrap}
-.thumbs figure{margin:0;position:relative}
-.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:10px;display:block}
-.thumbs button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:13px;line-height:1;padding:0}
-details{display:flex;flex-direction:column;gap:10px}
-details summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600}
-details[open] summary{margin-bottom:10px}
-details .row{margin-top:10px}
-.msg{font-size:13px;color:var(--muted)}
-.msg.err{color:var(--warn)}
+/* ---------- install hint ---------- */
+.install{display:flex;gap:12px;align-items:center;background:var(--surface);border-radius:var(--r);padding:12px 14px;font-size:14px}
+.install b{display:block}
+.install .x{margin-left:auto}
 
-/* preview table */
-.prev{display:flex;flex-direction:column;gap:6px}
-.pi{display:grid;grid-template-columns:1fr 64px 64px 28px;gap:6px;align-items:center}
-.pi input{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;min-width:0;width:100%}
-.pi input.n{text-align:right}
-.pi .x{border:none;background:none;color:var(--muted);font-size:18px}
-.pi small{grid-column:1/-1;margin-top:-4px;color:var(--muted);font-size:12px}
-.phead{display:grid;grid-template-columns:1fr 64px 64px 28px;gap:6px}
-.phead span:nth-child(2),.phead span:nth-child(3){text-align:right}
-.note{font-size:12.5px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px 10px}
-
-/* meals */
-.meals{display:flex;flex-direction:column;gap:16px}
-.meal h3{margin:0 0 6px;display:flex;justify-content:space-between;align-items:baseline;font-family:var(--display);font-weight:500;font-size:14px}
-.meal h3 span{font-family:var(--body);font-weight:700;font-size:14px}
-.item{display:grid;grid-template-columns:1fr auto 26px;gap:10px;padding:9px 0;border-top:1px solid var(--line);align-items:center}
-.item .nm{min-width:0}
-.item .nm div{overflow-wrap:anywhere}
-.item .nm small{color:var(--muted);font-size:12px}
-.item .k{font-weight:700}
-.item .x{border:none;background:none;color:var(--muted);font-size:16px;opacity:.6}
-.item .x:hover{opacity:1}
-button.nm{border:none;background:none;padding:0;text-align:left;display:grid;grid-template-columns:16px 1fr;gap:6px;align-items:start;cursor:pointer}
-div.nm{display:grid;grid-template-columns:16px 1fr;gap:6px}
-.chev{color:var(--muted);font-size:12px;line-height:1.6;transition:transform .2s}
+/* ---------- diary list (iOS inset grouped) ---------- */
+.meals{display:flex;flex-direction:column;gap:18px}
+.meal h3{margin:0 16px 6px;display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.meal h3 span{font-family:var(--num);text-transform:none;letter-spacing:0;font-size:14px}
+.mlist{background:var(--surface);border-radius:var(--r);overflow:hidden}
+.dish+.dish{border-top:.5px solid var(--sep)}
+.sw{position:relative;overflow:hidden}
+.swdel{position:absolute;top:0;right:0;bottom:0;width:88px;border:none;background:var(--warn);color:#fff;font-weight:600;font-size:15px}
+.swc{position:relative;background:var(--surface);transition:transform .25s cubic-bezier(.2,.8,.2,1);touch-action:pan-y}
+.swc.drag{transition:none}
+.item{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:12px 14px;min-height:56px}
+.item .nm,.ing .nm{min-width:0}
+button.nm{border:none;background:none;padding:0;text-align:left;display:grid;grid-template-columns:14px 1fr;gap:6px;align-items:start}
+div.nm{display:grid;grid-template-columns:14px 1fr;gap:6px}
+.nm div div:first-child{font-weight:500;overflow-wrap:anywhere}
+.nm small,.ing small{display:block;color:var(--muted);font-size:13px;margin-top:1px}
+.chev{color:var(--muted);font-size:11px;line-height:1.9;transition:transform .2s}
 button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
-.ings{padding:0 0 8px 22px;display:flex;flex-direction:column}
-.ing{display:grid;grid-template-columns:1fr auto 26px;gap:10px;align-items:center;padding:6px 0;border-top:1px dashed var(--line);font-size:13.5px}
-.ing .k{font-weight:600;color:var(--muted)}
-.ing small{color:var(--muted);font-size:11.5px}
-.pd{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid var(--line)}
-.pd:first-child{border-top:none;padding-top:0}
-.pi.dh input:first-child{font-weight:700}
-.pi .kc{text-align:right;font-weight:700;padding-right:8px}
-.meta{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
-.tog{border:none;background:none;color:var(--accent);font-weight:600;font-size:12.5px;padding:2px 0}
-.pd .ings{padding:2px 0 0 14px;gap:6px;border-left:2px solid var(--soft);margin-left:4px}
-.pd .ings .pi input{font-size:13.5px}
-.addIng{align-self:flex-start;border:none;background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:2px 0}
-.empty{text-align:center;color:var(--muted);padding:22px 8px;border:1px dashed var(--line);border-radius:var(--r);font-size:14px}
+.k{font-family:var(--num);font-weight:700;font-size:17px;min-width:2.6em;text-align:right}
+.ings{background:var(--bg);background:color-mix(in srgb,var(--bg) 55%,var(--surface))}
+.ing{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 14px 10px 34px;font-size:15px;border-top:.5px solid var(--sep)}
+.ing .k{font-size:15px;font-weight:600;color:var(--muted)}
+.x{border:none;background:none;color:var(--muted);font-size:20px;width:32px;height:32px;border-radius:50%;padding:0}
+@media (hover:none){.item>.x,.ing>.x{display:none}} /* touch: swipe left to delete */
+@media (hover:hover){.item,.ing{grid-template-columns:1fr auto auto 32px}}
+.gbtn{border:none;background:var(--soft);border-radius:8px;padding:5px 9px;font-size:13px;color:var(--muted);font-family:var(--num);white-space:nowrap;min-height:30px}
+.gin{width:76px;border:1.5px solid var(--accent);background:var(--surface);border-radius:8px;padding:4px 8px;text-align:right;font-family:var(--num)}
+.empty{text-align:center;color:var(--muted);padding:36px 20px;background:var(--surface);border-radius:var(--r);font-size:15px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.empty svg{width:44px;height:44px;color:var(--line)}
+.addtext{align-self:center;border:none;background:none;color:var(--accent);font-weight:600;font-size:15px;padding:10px;min-height:44px}
+.foot{font-size:12.5px;color:var(--muted);margin:0 8px;text-align:center}
 
-/* week */
-.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:120px;position:relative}
+/* ---------- week ---------- */
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:170px;position:relative}
 .wk{display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;border:none;background:none;padding:0}
-.wk .col{width:100%;max-width:34px;background:var(--soft);border-radius:6px 6px 3px 3px;position:relative;flex:1;display:flex;align-items:flex-end;overflow:hidden}
-.wk .col i{display:block;width:100%;background:var(--c);border-radius:6px 6px 3px 3px}
+.wk .col{width:100%;max-width:30px;background:var(--soft);border-radius:8px;flex:1;display:flex;align-items:flex-end;overflow:hidden}
+.wk .col i{display:block;width:100%;background:var(--c);border-radius:8px;transition:height .5s ease}
 .wk .col i.over{background:var(--warn)}
-.wk.cur .col{outline:2px solid var(--ink);outline-offset:1px}
-.wk small{font-size:11px;color:var(--muted)}
-.wk b{font-size:11px;font-weight:600}
-.goalline{position:absolute;left:0;right:0;border-top:1px dashed var(--muted);pointer-events:none}
-.foot{font-size:12px;color:var(--muted)}
+.wk.cur .col{box-shadow:0 0 0 2px var(--ink)}
+.wk small{font-size:12px;color:var(--muted)}
+.wk b{font-size:11px;font-weight:600;font-family:var(--num)}
+.goalline{position:absolute;left:0;right:0;border-top:1.5px dashed var(--muted);opacity:.6;pointer-events:none}
+.wstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.wstat{background:var(--surface);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:2px}
+.wstat b{font-family:var(--num);font-size:22px}
+.wstat small{color:var(--muted);font-size:12px}
 
-@media (max-width:440px){
-  .dial{grid-template-columns:1fr;justify-items:center}
-  .stats{width:100%}
-  .pi,.phead{grid-template-columns:1fr 54px 58px 24px}
-}
-@media (prefers-reduced-motion:no-preference){
-  .ring circle.prog,.bar i,.wk .col i{transition:stroke-dashoffset .5s ease,width .5s ease,height .5s ease}
-}
+/* ---------- tab bar ---------- */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:1fr 92px 1fr;align-items:start;
+  height:calc(var(--tabh) + var(--safe-b));padding-bottom:var(--safe-b);background:var(--bar);border-top:.5px solid var(--line);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+.tab{border:none;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0 0;color:var(--muted);font-size:11px;font-weight:500;height:var(--tabh)}
+.tab svg{width:26px;height:26px}
+.tab[aria-current="page"]{color:var(--accent)}
+.tab[data-view="diary"]{grid-column:1}.tab[data-view="week"]{grid-column:3}
+.fab{position:absolute;left:50%;transform:translateX(-50%);top:-22px;width:66px;height:66px;border-radius:50%;background:var(--accent);color:var(--accent-ink);
+  display:grid;place-items:center;box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 40%,transparent),0 0 0 5px var(--bg);transition:transform .15s}
+.fab svg{width:30px;height:30px}
+.fab.busy{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 40%,transparent),0 0 0 5px var(--bg),0 0 0 14px color-mix(in srgb,var(--accent) 18%,transparent)}}
 
-.txt{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:8px 14px}
-.account .row b{font-weight:600}
-.linkbox{display:flex;flex-direction:column;gap:8px}
-.login h1{font-family:var(--display);font-weight:700;font-size:clamp(26px,7vw,38px);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.02em}
-.login p{margin:0;max-width:52ch}
+/* ---------- bottom sheet ---------- */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:40;opacity:0;transition:opacity .25s}
+.scrim.on{opacity:1}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;max-height:calc(100% - var(--safe-t) - 24px);display:flex;flex-direction:column;
+  background:var(--bg);border-radius:14px 14px 0 0;transform:translateY(100%);transition:transform .32s cubic-bezier(.2,.8,.2,1);
+  box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+.sheet.on{transform:none}
+.sheet.drag{transition:none}
+@media (min-width:640px){.sheet{left:50%;width:600px;margin-left:-300px}}
+.grab{width:38px;height:5px;border-radius:3px;background:var(--line);margin:7px auto 0;flex:none}
+.sheethead{display:flex;align-items:center;justify-content:space-between;padding:0 12px;min-height:48px;flex:none;touch-action:none}
+.sheethead h2{margin:0;font-size:17px;font-weight:600}
+.sheetbody{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px 16px 16px;display:flex;flex-direction:column;gap:14px}
+.sheetfoot{flex:none;display:flex;align-items:center;gap:12px;padding:10px 16px calc(10px + var(--safe-b));background:var(--bar);border-top:.5px solid var(--line);
+  -webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.sheetfoot #prevTotal{flex:1;font-family:var(--num);font-size:20px;font-weight:700}
+.sheetfoot .btn{min-width:140px}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);background:var(--soft);border-radius:10px;padding:2px;gap:2px}
+.seg button{border:none;background:none;border-radius:8px;padding:7px 2px;font-size:13.5px;font-weight:600;color:var(--muted);min-height:34px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.thumbs{display:flex;gap:8px;overflow-x:auto;padding:2px}
+.thumbs figure{margin:0;position:relative;flex:none}
+.thumbs img{width:76px;height:76px;object-fit:cover;border-radius:12px;display:block}
+.thumbs figure button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:none;background:var(--ink);color:var(--bg);font-size:14px;line-height:1;padding:0}
+.addphoto{width:76px;height:76px;border-radius:12px;border:1.5px dashed var(--line);display:grid;place-items:center;color:var(--muted);flex:none;cursor:pointer}
+.addphoto svg{width:26px;height:26px}
+.working{display:flex;gap:12px;align-items:center;background:var(--surface);border-radius:var(--r);padding:14px}
+.spin{width:22px;height:22px;border-radius:50%;border:2.5px solid var(--soft);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.note{font-size:13.5px;color:var(--muted);background:var(--surface);border-radius:12px;padding:10px 12px}
+details#more{background:var(--surface);border-radius:var(--r);padding:0 14px}
+details#more summary{list-style:none;padding:14px 0;font-weight:500;display:flex;align-items:center;gap:8px;min-height:48px}
+details#more summary::-webkit-details-marker{display:none}
+details#more summary::after{content:"›";margin-left:auto;color:var(--muted);font-size:20px;transition:transform .2s}
+details#more[open] summary::after{transform:rotate(90deg)}
+details#more[open]{padding-bottom:14px}
+details#more .row{margin-top:10px}
+textarea#text{width:100%;min-height:76px;resize:vertical;border:none;background:var(--soft);border-radius:12px;padding:10px 12px}
 
-#gear{margin-left:4px}
-#gear[aria-expanded="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.settings{display:flex;flex-direction:column;gap:12px;padding:14px;margin-inline:-14px;border-radius:calc(var(--r) + 4px);background:var(--soft)}
-.shead{display:flex;align-items:center;justify-content:space-between}
-.shead h2{margin:0;font-family:var(--display);font-weight:500;font-size:17px}
+/* draft (review before adding) */
+.prev{display:flex;flex-direction:column}
+.phead{display:none}
+#prevList{gap:10px}
+.pd{background:var(--surface);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:8px}
+.pi{display:grid;grid-template-columns:1fr 70px 62px 32px;gap:6px;align-items:center}
+.pi input{border:none;background:var(--soft);border-radius:10px;padding:9px 10px;min-width:0;width:100%;min-height:40px}
+.pi input.n{text-align:right;font-family:var(--num)}
+.pi.dh input:first-child{font-weight:600}
+.pi .kc{text-align:right;font-family:var(--num);font-weight:700;font-size:17px}
+.pi .x{width:32px}
+@media (hover:none){.pi .x{display:block}}
+.meta{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+.tog{border:none;background:none;color:var(--accent);font-weight:600;font-size:14px;padding:6px 0;min-height:36px}
+.pd .ings{display:flex;flex-direction:column;gap:6px;padding:4px 0 0 10px;border-left:2px solid var(--soft);background:none}
+.addIng{align-self:flex-start;border:none;background:none;color:var(--accent);font-size:14px;font-weight:600;padding:6px 0;min-height:36px}
+#addRow{align-self:flex-start}
+
+/* ---------- settings (grouped) ---------- */
 .fld{display:flex;flex-direction:column;gap:6px}
-.fld>span:first-child{font-weight:600;font-size:13px}
-.fld small,.check small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
-.fld .txt{border-radius:10px}
-.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
-.check input{margin-top:3px;accent-color:var(--accent)}
+.fld>span:first-child,.fld .lab{font-weight:600;font-size:14px}
+.fld small,.check small{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.txt{flex:1;min-width:0;border:none;background:var(--soft);border-radius:10px;padding:11px 12px;min-height:44px;width:100%}
+.fld textarea.txt{min-height:72px;resize:vertical}
+.check{display:flex;gap:12px;align-items:flex-start;font-size:15px;cursor:pointer}
+.check input{margin-top:2px;width:22px;height:22px;accent-color:var(--accent);flex:none}
 .check span{display:flex;flex-direction:column;gap:2px}
 .pill{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
 .pill.ok{background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c)}
 .pill.bad{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
-.danger{color:var(--warn)}
-.msg.ok{color:var(--c)}
-
-.lhero{display:flex;flex-direction:column;gap:8px}
-.lcard{max-width:420px;width:100%}
-.txt.big{font-size:17px;padding:12px 16px;border-radius:12px}
-.txt.code{letter-spacing:.4em;font-weight:700;text-align:center;font-size:24px}
-.btn.wide{width:100%;padding:13px 18px;font-size:16px}
-.hint{color:var(--muted);font-size:12.5px}
-.sent{margin:0;font-size:14px;overflow-wrap:anywhere}
-.linkbtn{border:none;background:none;padding:4px 0;color:var(--accent);font-weight:600;font-size:13.5px}
-.linkbtn:disabled{color:var(--muted);cursor:default}
-.login{min-height:85vh;justify-content:center}
-.attach{display:flex;flex-direction:column;gap:8px}
+.cfg{display:flex;flex-direction:column;gap:16px}
+.cfgcard .fld .lab{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.src{font-size:11px;font-weight:600;color:var(--muted);background:var(--soft);border-radius:999px;padding:1px 8px}
+.src.app{color:var(--p);background:color-mix(in srgb,var(--p) 14%,transparent)}
+.fld .reset{border:none;background:none;color:var(--accent);font-size:13px;padding:0;margin-left:auto}
+.cfgnote{font-size:12.5px;color:var(--muted);padding:0 8px}
+.attach,.linkbox{display:flex;flex-direction:column;gap:8px}
 .ulist{display:flex;flex-direction:column}
-.urow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-top:1px solid var(--line);align-items:center}
+.urow{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:12px 0;border-top:.5px solid var(--sep);align-items:center}
 .urow .who{min-width:0}
 .urow .who b{font-weight:600}
-.urow .who small{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.urow .who small{display:block;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .urow .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.urow .acts button{font-size:12px;padding:5px 10px}
+.urow .acts button{font-size:13px;padding:6px 10px;min-height:34px}
 .urow.off .who{opacity:.55}
 .tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--muted);margin-left:6px;vertical-align:1px}
 .tag.adm{background:color-mix(in srgb,var(--p) 16%,transparent);color:var(--p)}
 .tag.off{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
-.ulist h4{margin:14px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
-@media (max-width:440px){.urow{grid-template-columns:1fr}.urow .acts{justify-content:flex-start}}
+.ulist h4{margin:14px 0 2px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+@media (max-width:420px){.urow{grid-template-columns:1fr}.urow .acts{justify-content:flex-start}}
+.profile{display:flex;gap:14px;align-items:center}
+.avatar{width:52px;height:52px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:22px;font-weight:700;flex:none;text-transform:uppercase}
+.iconbtn.me{background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:16px;text-transform:uppercase}
 
-.item{grid-template-columns:1fr auto auto 26px}
-.ing{grid-template-columns:1fr auto auto 26px}
-.gbtn{border:1px dashed var(--line);background:none;border-radius:8px;padding:2px 8px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.gbtn:hover{border-color:var(--muted);color:var(--ink)}
-.gin{width:72px;border:1px solid var(--accent);background:var(--bg);border-radius:8px;padding:3px 8px;font-size:13px;text-align:right}
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;bottom:calc(var(--tabh) + var(--safe-b) + 28px);transform:translate(-50%,20px);z-index:60;opacity:0;
+  background:var(--ink);color:var(--bg);padding:11px 18px;border-radius:14px;font-size:15px;font-weight:500;max-width:calc(100% - 32px);
+  box-shadow:0 8px 24px rgba(0,0,0,.2);transition:opacity .2s,transform .25s cubic-bezier(.2,.8,.2,1);pointer-events:none;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.err{background:var(--warn);color:#fff}
 
-.cfg{display:flex;flex-direction:column;gap:12px}
-.cfgcard .fld .lab{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.src{font-size:11px;font-weight:600;color:var(--muted);background:var(--soft);border-radius:999px;padding:1px 8px}
-.src.app{color:var(--p);background:color-mix(in srgb,var(--p) 14%,transparent)}
-.fld textarea.txt{min-height:64px;border-radius:10px;font:inherit;resize:vertical}
-.fld .reset{border:none;background:none;color:var(--muted);font-size:12px;text-decoration:underline;padding:0;margin-left:auto}
-.cfgnote{font-size:12px;color:var(--muted);padding:0 4px}
+/* ---------- sign-in ---------- */
+.login{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;gap:22px;padding:calc(var(--safe-t) + 24px) 20px calc(var(--safe-b) + 24px);max-width:440px;margin:0 auto}
+.lhero{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.lhero img{width:72px;height:72px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.login h1{font-size:30px;line-height:1.12;margin:6px 0 0;letter-spacing:-.02em;text-wrap:balance}
+.login p{margin:0;color:var(--muted)}
+.lcard{gap:14px}
+.txt.big{font-size:18px;padding:14px 16px;min-height:52px}
+.txt.code{letter-spacing:.45em;font-weight:700;text-align:center;font-size:26px;font-family:var(--num)}
+.btn.wide{width:100%;min-height:52px;font-size:17px}
+.hint{color:var(--muted);font-size:13px}
+.sent{margin:0;font-size:15px;overflow-wrap:anywhere}
+
+.sheetbody>*{flex:none}
+.thumbs{padding:8px 4px 2px}
+body.pushed .tabbar{transform:translateY(calc(100% + 48px))}
+.tabbar{transition:transform .25s ease}
+body.pushed .views{padding-bottom:calc(var(--safe-b) + 32px)}
 </style>
 </head>
 <body>
-<main class="wrap login" id="login" hidden>
-  <div class="brand">ккал·дневник</div>
+<main class="login" id="login" hidden>
   <div class="lhero">
+    <img src="/icon-192.png" alt="">
     <h1>Дневник калорий по фото</h1>
     <p>Сфотографируй тарелку, а блюда, граммы, калории и БЖУ посчитаются сами.</p>
   </div>
@@ -253,119 +322,138 @@ button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
   </form>
   <p class="msg" id="loginMsg" hidden></p>
 </main>
-<div class="wrap" id="app" hidden>
-  <header class="top">
-    <div class="brand">ккал·дневник</div>
-    <div class="daynav">
-      <button id="prev" aria-label="Предыдущий день">‹</button>
-      <div class="d" id="dayLabel">Сегодня</div>
-      <button id="next" aria-label="Следующий день">›</button>
-      <button id="gear" aria-label="Настройки" aria-expanded="false" aria-controls="settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+
+<div id="app" hidden>
+  <header class="nav" id="nav">
+    <div class="navrow">
+      <button class="navbtn" id="back" hidden aria-label="Назад"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Назад</button>
+      <div class="ttl"><h1 id="dayLabel">Сегодня</h1><small id="subtitle"></small></div>
+      <button class="iconbtn" id="prev" aria-label="Предыдущий день"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="iconbtn" id="next" aria-label="Следующий день"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="iconbtn me" id="gear" aria-label="Профиль и настройки">?</button>
     </div>
   </header>
 
-  <section id="settings" class="settings" hidden aria-label="Настройки">
-    <div class="shead"><h2>Настройки</h2><button class="ghost" id="closeSettings">Готово</button></div>
-<div class="card account">
-    <div class="row"><span class="label">Аккаунт</span><span class="spacer"></span><b id="who"></b></div>
-    <div class="msg" id="whoEmail"></div>
-    <form id="attachForm" class="attach" hidden novalidate>
-      <div class="msg">Привяжи почту, чтобы входить с любого устройства по коду.</div>
-      <div class="row"><input id="aEmail" class="txt" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Почта"><button class="ghost" id="aSend" type="submit">Получить код</button></div>
-      <div class="row" id="aCodeRow" hidden><input id="aCode" class="txt" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма" aria-label="Код из письма"><button class="btn" id="aVerify" type="button">Привязать</button></div>
-    </form>
-    <div class="row">
-      <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
-      <span class="spacer"></span>
-      <button class="ghost" id="logout">Выйти</button>
-    </div>
-
-    <div id="linkBox" class="linkbox" hidden>
-      <div class="msg" id="linkLabel"></div>
-      <div class="row"><input id="linkUrl" class="txt" readonly aria-label="Ссылка"><button class="ghost" id="copyLink">Копировать</button></div>
-    </div>
-  </div>
-    <section class="card" id="people" hidden aria-label="Люди">
-      <div class="row"><span class="label">Люди</span><span class="spacer"></span><span class="pill" id="peopleCount"></span></div>
-      <form class="row" id="inviteForm" novalidate>
-        <input id="inviteEmail" class="txt" type="email" inputmode="email" placeholder="Почта нового участника" aria-label="Почта нового участника">
-        <button class="btn" id="inviteBtn" type="submit">Пригласить</button>
-      </form>
-      <div class="msg" id="inviteMsg" hidden></div>
-      <div id="userList" class="ulist"></div>
-      <div id="inviteList" class="ulist"></div>
+  <main class="views">
+    <section class="view" id="vDiary" aria-label="Дневник">
+      <div class="install" id="install" hidden>
+        <img src="/icon-192.png" alt="" width="40" height="40" style="border-radius:10px">
+        <div><b>Установи как приложение</b><span id="installHow"></span></div>
+        <button class="x" id="installClose" aria-label="Скрыть подсказку">×</button>
+      </div>
+      <section class="dial" aria-label="Итог дня">
+        <div class="ring">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--soft)" stroke-width="11"/>
+            <circle class="prog" id="ringProg" cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="11" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+          </svg>
+          <div class="center">
+            <div class="big" id="left">2000</div>
+            <div class="sub" id="leftLabel">ккал осталось</div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="eaten"><b id="eaten">0</b> <span>из</span> <input class="goal" id="goal" type="number" inputmode="numeric" min="800" max="6000" step="50" value="2000" aria-label="Цель на день, ккал"> <span>ккал</span></div>
+          <div class="macro"><span>Белки</span><div class="bar"><i id="bp" style="background:var(--p);width:0"></i></div><span id="tp">0 г</span></div>
+          <div class="macro"><span>Жиры</span><div class="bar"><i id="bf" style="background:var(--f);width:0"></i></div><span id="tf">0 г</span></div>
+          <div class="macro"><span>Углеводы</span><div class="bar"><i id="bc" style="background:var(--c);width:0"></i></div><span id="tc">0 г</span></div>
+        </div>
+      </section>
+      <div class="meals" id="meals"></div>
+      <button class="addtext" id="addText">Добавить без фото</button>
+      <p class="foot">Оценки приблизительные: модель считает по фото и справочным значениям. Проверяй граммы — их можно поправить в любой момент.</p>
     </section>
-    <div id="cfg" class="cfg" hidden></div>
-  </section>
 
-  <section class="dial" aria-label="Итог дня">
-    <div class="ring">
-      <svg viewBox="0 0 120 120" aria-hidden="true">
-        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--soft)" stroke-width="10"/>
-        <circle class="prog" id="ringProg" cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
-      </svg>
-      <div class="center">
-        <div class="big" id="left">2000</div>
-        <div class="sub" id="leftLabel">ккал осталось</div>
+    <section class="view" id="vWeek" hidden aria-label="Неделя">
+      <div class="wstats" id="weekStats"></div>
+      <div class="card"><div class="week" id="week"></div></div>
+      <p class="foot">Пунктир — твоя цель. Нажми на столбик, чтобы открыть день.</p>
+    </section>
+
+    <section class="view" id="settings" hidden aria-label="Настройки">
+      <div class="card account">
+        <div class="profile"><div class="avatar" id="avatar">?</div><div><b id="who"></b><div class="msg" id="whoEmail"></div></div></div>
+        <form id="attachForm" class="attach" hidden novalidate>
+          <div class="msg">Привяжи почту, чтобы входить с любого устройства по коду.</div>
+          <div class="row"><input id="aEmail" class="txt" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Почта"><button class="ghost" id="aSend" type="submit">Получить код</button></div>
+          <div class="row" id="aCodeRow" hidden><input id="aCode" class="txt" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма" aria-label="Код из письма"><button class="btn" id="aVerify" type="button">Привязать</button></div>
+        </form>
+        <div class="row">
+          <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
+          <span class="spacer"></span>
+          <button class="ghost danger" id="logout">Выйти</button>
+        </div>
+        <div id="linkBox" class="linkbox" hidden>
+          <div class="msg" id="linkLabel"></div>
+          <div class="row"><input id="linkUrl" class="txt" readonly aria-label="Ссылка"><button class="ghost" id="copyLink">Копировать</button></div>
+        </div>
       </div>
-    </div>
-    <div class="stats">
-      <div class="eaten"><b id="eaten">0</b> <span>из</span> <input class="goal" id="goal" type="number" min="800" max="6000" step="50" value="2000" aria-label="Цель на день, ккал"> <span>ккал</span></div>
-      <div class="macro"><span>Белки</span><div class="bar"><i id="bp" style="background:var(--p);width:0"></i></div><span id="tp">0 г</span></div>
-      <div class="macro"><span>Жиры</span><div class="bar"><i id="bf" style="background:var(--f);width:0"></i></div><span id="tf">0 г</span></div>
-      <div class="macro"><span>Углеводы</span><div class="bar"><i id="bc" style="background:var(--c);width:0"></i></div><span id="tc">0 г</span></div>
-    </div>
-  </section>
+      <section class="card" id="people" hidden aria-label="Люди">
+        <div class="row"><span class="label">Люди</span><span class="spacer"></span><span class="pill" id="peopleCount"></span></div>
+        <form class="row" id="inviteForm" novalidate>
+          <input id="inviteEmail" class="txt" type="email" inputmode="email" placeholder="Почта нового участника" aria-label="Почта нового участника">
+          <button class="btn" id="inviteBtn" type="submit">Пригласить</button>
+        </form>
+        <div class="msg" id="inviteMsg" hidden></div>
+        <div id="userList" class="ulist"></div>
+        <div id="inviteList" class="ulist"></div>
+      </section>
+      <div id="cfg" class="cfg" hidden></div>
+    </section>
+  </main>
 
-  <section class="card" aria-label="Добавить приём пищи">
-    <div class="seg" id="mealSeg" role="group" aria-label="Приём пищи"></div>
-    <label class="shoot" for="photo" id="shoot">
-      <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg>
-      <span><b>Сфотографировать еду</b><small>или выбрать снимок из галереи — калории посчитаются сами</small></span>
+  <nav class="tabbar" aria-label="Разделы">
+    <button class="tab" data-view="diary" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6"/></svg>
+      Дневник
+    </button>
+    <label class="fab" for="photo" id="shoot" aria-label="Сфотографировать еду" role="button" tabindex="0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg>
     </label>
-    <input type="file" id="photo" accept="image/*" multiple hidden>
-    <div class="thumbs" id="thumbs" hidden></div>
-    <details id="more">
-      <summary>Уточнить словами или ввести без фото</summary>
-      <textarea id="text" placeholder="Например: порция примерно 300 г, без сахара. Или просто: овсянка на молоке, банан, кофе"></textarea>
-      <div class="row">
-        <button class="ghost" id="manual">Ввести вручную</button>
-        <span class="spacer"></span>
-        <button class="btn" id="calc">Посчитать</button>
-      </div>
-    </details>
-    <div class="msg" id="msg" hidden></div>
+    <button class="tab" data-view="week">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V11M10 20V5M15 20v-7M20 20V9"/></svg>
+      Неделя
+    </button>
+  </nav>
+  <input type="file" id="photo" accept="image/*" multiple hidden>
 
-    <div id="preview" hidden>
-      <div class="prev">
-        <div class="phead label"><span>Блюдо</span><span>Граммы</span><span>Ккал</span><span></span></div>
-        <div id="prevList" class="prev"></div>
+  <div class="scrim" id="scrim" hidden></div>
+  <section class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheethead" id="sheetHead">
+      <button class="navbtn" id="sheetClose">Закрыть</button>
+      <h2 id="sheetTitle">Новая запись</h2>
+      <span style="width:72px"></span>
+    </div>
+    <div class="sheetbody" id="sheetBody">
+      <div class="seg" id="mealSeg" role="group" aria-label="Приём пищи"></div>
+      <div class="thumbs" id="thumbs" hidden></div>
+      <div class="msg" id="msg" hidden></div>
+      <div id="preview" hidden>
+        <div class="prev">
+          <div class="phead"></div>
+          <div id="prevList" class="prev"></div>
+        </div>
+        <div class="note" id="note" hidden></div>
+        <button class="ghost" id="addRow" style="margin-top:10px">+ блюдо</button>
       </div>
-      <div class="note" id="note" hidden></div>
-      <div class="row" style="margin-top:10px">
-        <button class="ghost" id="addRow">+ блюдо</button>
-        <span class="spacer"></span>
-        <span id="prevTotal" class="label"></span>
-        <button class="btn" id="save">Добавить</button>
-      </div>
+      <details id="more">
+        <summary>Уточнить словами или ввести без фото</summary>
+        <textarea id="text" placeholder="Например: порция примерно 300 г, без сахара. Или просто: овсянка на молоке, банан, кофе"></textarea>
+        <div class="row">
+          <button class="ghost" id="manual">Ввести вручную</button>
+          <span class="spacer"></span>
+          <button class="btn" id="calc">Посчитать</button>
+        </div>
+      </details>
+    </div>
+    <div class="sheetfoot">
+      <span id="prevTotal"></span>
+      <button class="btn" id="save" disabled>Добавить</button>
     </div>
   </section>
-
-  <section>
-    <div class="label" style="margin-bottom:10px">Дневник дня</div>
-    <div class="meals" id="meals"></div>
-  </section>
-
-  <section>
-    <div class="label" style="margin-bottom:10px">Последние 7 дней</div>
-    <div class="week" id="week"></div>
-  </section>
-
-  
-
-  <p class="foot" id="foot">Оценки калорий приблизительные: Claude считает по типичным порциям и справочным значениям. По фото вес порции оценивается на глаз, поэтому проверяй граммы перед добавлением или уточняй словами.</p>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </div>
-
 <script src="/app.js" defer></script>
 </body>
 </html>
