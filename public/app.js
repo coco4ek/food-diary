@@ -7,7 +7,10 @@ const r1=n=>Math.round((+n||0)*10)/10;
 const uidGen=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
 
 let day=new Date(); day.setHours(12,0,0,0);
-let meal=(h=>h<11?"breakfast":h<16?"lunch":h<22?"dinner":"snack")(new Date().getHours());
+// Default meal for a new entry comes from the clock; «Перекус» is only ever chosen by the person.
+// 04:00–10:59 завтрак, 11:00–15:59 обед, 16:00–03:59 ужин
+const mealByTime=(h=new Date().getHours())=>h>=4&&h<11?"breakfast":h>=11&&h<16?"lunch":"dinner";
+let meal=mealByTime();
 let dayData={entries:[]}; let goal=2000; const openSet=new Set();
 let draft=[]; let draftNote=""; let photos=[]; let maxPhotos=4;
 
@@ -331,6 +334,8 @@ const sheetOpen=()=>!$("sheet").hidden;
 function openSheet(mode){
   const s=$("sheet"),sc=$("scrim");
   if(!sheetOpen()){
+    // a fresh entry: pick breakfast/lunch/dinner by the current time (a draft in progress keeps its choice)
+    if(!draft.length&&!photos.length){meal=mealByTime();renderSeg()}
     s.hidden=false;sc.hidden=false;void s.offsetHeight;s.classList.add("on");sc.classList.add("on");
     document.body.style.overflow="hidden";history.pushState({sheet:1},"");
   }
