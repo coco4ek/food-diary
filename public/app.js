@@ -278,14 +278,18 @@ async function mutate(eid,fn){
 }
 const removeDish=(eid,di)=>mutate(eid,e=>e.dishes.splice(di,1));
 const removeIng=(eid,di,ii)=>mutate(eid,e=>e.dishes[di].items.splice(ii,1));
-function clearPhoto(){photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];$("photo").value="";renderThumbs()}
+function clearPhoto(){photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];$("photo").value="";$("gallery").value="";renderThumbs()}
 function renderThumbs(){
   const box=$("thumbs");box.innerHTML="";box.hidden=!photos.length;
   photos.forEach((p,i)=>{const f=document.createElement("figure");const im=document.createElement("img");im.src=p.url;im.alt="Фото еды "+(i+1);
     const x=document.createElement("button");x.textContent="×";x.setAttribute("aria-label","Убрать фото");x.onclick=()=>{URL.revokeObjectURL(p.url);photos.splice(i,1);renderThumbs()};
     f.append(im,x);box.append(f)});
-  if(photos.length&&photos.length<maxPhotos){const a=el("label","addphoto");a.htmlFor="photo";a.title="Добавить ещё фото";
-    a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';box.append(a)}
+  if(photos.length&&photos.length<maxPhotos){
+    const cam=el("label","addphoto");cam.htmlFor="photo";cam.title="Сделать ещё фото";
+    cam.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg><small>Камера</small>';
+    const gal=el("label","addphoto");gal.htmlFor="gallery";gal.title="Добавить из галереи";
+    gal.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8.5 8.5"/></svg><small>Галерея</small>';
+    box.append(cam,gal)}
 }
 const toDataURL=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(b)});
 /* phone photos are large: shrink to 1568px JPEG before sending */
@@ -408,13 +412,16 @@ $("text").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlK
 $("save").onclick=saveDraft;
 $("addRow").onclick=()=>{draft.push({name:"",items:[{name:"",grams:100,kcal:0,protein:0,fat:0,carbs:0}],_open:true});renderDraft();$("pn"+(draft.length-1)).focus()};
 $("manual").onclick=()=>{draftNote="";$("addRow").click()};
-$("photo").onchange=async()=>{
-  const fs=[...$("photo").files].slice(0,Math.max(0,maxPhotos-photos.length));$("photo").value="";
+async function takeFiles(input){
+  const fs=[...input.files].slice(0,Math.max(0,maxPhotos-photos.length));input.value="";
   if(!fs.length)return;
   openSheet("photo");
   for(const f of fs){const b=await shrink(f);photos.push({blob:b,url:URL.createObjectURL(b)})}
   renderThumbs();estimate();
-};
+}
+$("photo").onchange=()=>takeFiles($("photo"));
+$("gallery").onchange=()=>takeFiles($("gallery"));
+$("tabText").onclick=()=>{haptic();openSheet("text")};
 let goalT;$("goal").oninput=()=>{const v=+$("goal").value;if(v>=800&&v<=6000){goal=v;renderDay();clearTimeout(goalT);goalT=setTimeout(()=>{renderWeek();api("/me",{method:"PUT",body:{goal}}).catch(e=>showMsg(e.message,true))},600)}};
 
 /* ---------- sign-in by email code ---------- */
