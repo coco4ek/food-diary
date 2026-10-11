@@ -1,0 +1,14 @@
+services:
+  kkal:
+    build: .
+    container_name: kkal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/kkal.sqlite
+    volumes:
+      - ./data:/app/data
+    # Port is open only on localhost: Caddy (or nginx) on the same server proxies to it.
+    # If your Caddy runs in Docker, remove "ports" and join its network instead (see README).
+    ports:
+      - "127.0.0.1:3000:3000"

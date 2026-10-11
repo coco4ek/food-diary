@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Дневник калорий</title>
+<meta name="theme-color" content="#C8442F">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ккал">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+html{-webkit-text-size-adjust:100%}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font:14px/1.45 system-ui,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<style>
+/* Layout: one narrow column like a phone app — day header, remaining-kcal dial, input, meals, week strip */
+:root{
+  --bg:#EEF1EC; --surface:#FFFFFF; --ink:#18211A; --muted:#66705F; --line:#D8DED3;
+  --accent:#C8442F; --accent-ink:#FFFFFF; --soft:#E3E8DF;
+  --p:#3A66C4; --f:#D39A1E; --c:#3E8C5A; --warn:#B3261E;
+  --display:"Unbounded", "Arial Black", system-ui, sans-serif;
+  --body:"Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121612; --surface:#1B211C; --ink:#E7ECE4; --muted:#98A291; --line:#2C352D;
+  --accent:#E8634B; --accent-ink:#1A0D0A; --soft:#242B25;
+  --p:#7AA2F0; --f:#E9B84E; --c:#6CC28A; --warn:#F2847B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121612; --surface:#1B211C; --ink:#E7ECE4; --muted:#98A291; --line:#2C352D;
+  --accent:#E8634B; --accent-ink:#1A0D0A; --soft:#242B25;
+  --p:#7AA2F0; --f:#E9B84E; --c:#6CC28A; --warn:#F2847B; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums}
+.wrap{max-width:620px;margin:0 auto;padding-inline:16px;padding-block:18px 48px;display:flex;flex-direction:column;gap:18px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+/* header */
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.brand{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.01em}
+.daynav{display:flex;align-items:center;gap:4px}
+.daynav button{background:none;border:1px solid var(--line);border-radius:999px;width:34px;height:34px;display:grid;place-items:center}
+.daynav button:disabled{opacity:.35;cursor:default}
+.daynav .d{min-width:118px;text-align:center;font-weight:600}
+
+/* dial */
+.dial{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
+.ring{position:relative;width:150px;height:150px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .center{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.big{font-family:var(--display);font-weight:700;font-size:30px;line-height:1;letter-spacing:-.02em}
+.big.over{color:var(--warn)}
+.sub{font-size:12px;color:var(--muted);margin-top:4px}
+.stats{display:flex;flex-direction:column;gap:10px;min-width:0}
+.eaten{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.eaten b{font-family:var(--display);font-size:20px}
+.goal{border:none;background:none;border-bottom:1px dashed var(--muted);width:4.5em;padding:0;text-align:right;color:var(--muted)}
+.macro{display:grid;grid-template-columns:62px 1fr auto;gap:8px;align-items:center;font-size:13px}
+.bar{height:6px;background:var(--soft);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+
+/* input */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px}
+textarea{width:100%;min-height:72px;resize:vertical;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.seg{display:flex;background:var(--soft);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{border:none;background:none;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
+.btn{border:none;border-radius:999px;padding:10px 18px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.5;cursor:default}
+.ghost{border:1px solid var(--line);background:none;border-radius:999px;padding:8px 14px;font-weight:600;font-size:13px}
+.spacer{flex:1}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px dashed var(--line);background:none;border-radius:999px;padding:5px 10px;font-size:12.5px;color:var(--muted)}
+.shoot{display:flex;align-items:center;gap:14px;padding:18px;border-radius:12px;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+.shoot b{display:block;font-family:var(--display);font-weight:500;font-size:16px}
+.shoot small{display:block;font-size:12.5px;opacity:.85}
+.shoot.busy{opacity:.6;pointer-events:none}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumbs figure{margin:0;position:relative}
+.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:10px;display:block}
+.thumbs button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:13px;line-height:1;padding:0}
+details{display:flex;flex-direction:column;gap:10px}
+details summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600}
+details[open] summary{margin-bottom:10px}
+details .row{margin-top:10px}
+.msg{font-size:13px;color:var(--muted)}
+.msg.err{color:var(--warn)}
+
+/* preview table */
+.prev{display:flex;flex-direction:column;gap:6px}
+.pi{display:grid;grid-template-columns:1fr 64px 64px 28px;gap:6px;align-items:center}
+.pi input{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;min-width:0;width:100%}
+.pi input.n{text-align:right}
+.pi .x{border:none;background:none;color:var(--muted);font-size:18px}
+.pi small{grid-column:1/-1;margin-top:-4px;color:var(--muted);font-size:12px}
+.phead{display:grid;grid-template-columns:1fr 64px 64px 28px;gap:6px}
+.phead span:nth-child(2),.phead span:nth-child(3){text-align:right}
+.note{font-size:12.5px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px 10px}
+
+/* meals */
+.meals{display:flex;flex-direction:column;gap:16px}
+.meal h3{margin:0 0 6px;display:flex;justify-content:space-between;align-items:baseline;font-family:var(--display);font-weight:500;font-size:14px}
+.meal h3 span{font-family:var(--body);font-weight:700;font-size:14px}
+.item{display:grid;grid-template-columns:1fr auto 26px;gap:10px;padding:9px 0;border-top:1px solid var(--line);align-items:center}
+.item .nm{min-width:0}
+.item .nm div{overflow-wrap:anywhere}
+.item .nm small{color:var(--muted);font-size:12px}
+.item .k{font-weight:700}
+.item .x{border:none;background:none;color:var(--muted);font-size:16px;opacity:.6}
+.item .x:hover{opacity:1}
+button.nm{border:none;background:none;padding:0;text-align:left;display:grid;grid-template-columns:16px 1fr;gap:6px;align-items:start;cursor:pointer}
+div.nm{display:grid;grid-template-columns:16px 1fr;gap:6px}
+.chev{color:var(--muted);font-size:12px;line-height:1.6;transition:transform .2s}
+button.nm[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.ings{padding:0 0 8px 22px;display:flex;flex-direction:column}
+.ing{display:grid;grid-template-columns:1fr auto 26px;gap:10px;align-items:center;padding:6px 0;border-top:1px dashed var(--line);font-size:13.5px}
+.ing .k{font-weight:600;color:var(--muted)}
+.ing small{color:var(--muted);font-size:11.5px}
+.pd{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid var(--line)}
+.pd:first-child{border-top:none;padding-top:0}
+.pi.dh input:first-child{font-weight:700}
+.pi .kc{text-align:right;font-weight:700;padding-right:8px}
+.meta{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.tog{border:none;background:none;color:var(--accent);font-weight:600;font-size:12.5px;padding:2px 0}
+.pd .ings{padding:2px 0 0 14px;gap:6px;border-left:2px solid var(--soft);margin-left:4px}
+.pd .ings .pi input{font-size:13.5px}
+.addIng{align-self:flex-start;border:none;background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:2px 0}
+.empty{text-align:center;color:var(--muted);padding:22px 8px;border:1px dashed var(--line);border-radius:var(--r);font-size:14px}
+
+/* week */
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:120px;position:relative}
+.wk{display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;border:none;background:none;padding:0}
+.wk .col{width:100%;max-width:34px;background:var(--soft);border-radius:6px 6px 3px 3px;position:relative;flex:1;display:flex;align-items:flex-end;overflow:hidden}
+.wk .col i{display:block;width:100%;background:var(--c);border-radius:6px 6px 3px 3px}
+.wk .col i.over{background:var(--warn)}
+.wk.cur .col{outline:2px solid var(--ink);outline-offset:1px}
+.wk small{font-size:11px;color:var(--muted)}
+.wk b{font-size:11px;font-weight:600}
+.goalline{position:absolute;left:0;right:0;border-top:1px dashed var(--muted);pointer-events:none}
+.foot{font-size:12px;color:var(--muted)}
+
+@media (max-width:440px){
+  .dial{grid-template-columns:1fr;justify-items:center}
+  .stats{width:100%}
+  .pi,.phead{grid-template-columns:1fr 54px 58px 24px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .ring circle.prog,.bar i,.wk .col i{transition:stroke-dashoffset .5s ease,width .5s ease,height .5s ease}
+}
+
+.txt{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:8px 14px}
+.account .row b{font-weight:600}
+.linkbox{display:flex;flex-direction:column;gap:8px}
+.login{min-height:80vh;justify-content:center}
+.login h1{font-family:var(--display);font-weight:700;font-size:clamp(26px,7vw,38px);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.02em}
+.login p{margin:0;max-width:52ch}
+</style>
+</head>
+<body>
+<div class="wrap login" id="login" hidden>
+  <div class="brand">ккал·дневник</div>
+  <h1>Дневник калорий по фото</h1>
+  <p>Сфотографируй тарелку — блюда, граммы, калории и БЖУ посчитаются сами.</p>
+  <p class="msg" id="loginMsg">Вход только по приглашению. Попроси ссылку у администратора, а если ты уже пользуешься дневником на другом устройстве, открой там «Войти на другом устройстве».</p>
+</div>
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div class="brand">ккал·дневник</div>
+    <div class="daynav">
+      <button id="prev" aria-label="Предыдущий день">‹</button>
+      <div class="d" id="dayLabel">Сегодня</div>
+      <button id="next" aria-label="Следующий день">›</button>
+    </div>
+  </header>
+
+  <section class="dial" aria-label="Итог дня">
+    <div class="ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--soft)" stroke-width="10"/>
+        <circle class="prog" id="ringProg" cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+      </svg>
+      <div class="center">
+        <div class="big" id="left">2000</div>
+        <div class="sub" id="leftLabel">ккал осталось</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="eaten"><b id="eaten">0</b> <span>из</span> <input class="goal" id="goal" type="number" min="800" max="6000" step="50" value="2000" aria-label="Цель на день, ккал"> <span>ккал</span></div>
+      <div class="macro"><span>Белки</span><div class="bar"><i id="bp" style="background:var(--p);width:0"></i></div><span id="tp">0 г</span></div>
+      <div class="macro"><span>Жиры</span><div class="bar"><i id="bf" style="background:var(--f);width:0"></i></div><span id="tf">0 г</span></div>
+      <div class="macro"><span>Углеводы</span><div class="bar"><i id="bc" style="background:var(--c);width:0"></i></div><span id="tc">0 г</span></div>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Добавить приём пищи">
+    <div class="seg" id="mealSeg" role="group" aria-label="Приём пищи"></div>
+    <label class="shoot" for="photo" id="shoot">
+      <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg>
+      <span><b>Сфотографировать еду</b><small>или выбрать снимок из галереи — калории посчитаются сами</small></span>
+    </label>
+    <input type="file" id="photo" accept="image/*" multiple hidden>
+    <div class="thumbs" id="thumbs" hidden></div>
+    <details id="more">
+      <summary>Уточнить словами или ввести без фото</summary>
+      <textarea id="text" placeholder="Например: порция примерно 300 г, без сахара. Или просто: овсянка на молоке, банан, кофе"></textarea>
+      <div class="row">
+        <button class="ghost" id="manual">Ввести вручную</button>
+        <span class="spacer"></span>
+        <button class="btn" id="calc">Посчитать</button>
+      </div>
+    </details>
+    <div class="msg" id="msg" hidden></div>
+
+    <div id="preview" hidden>
+      <div class="prev">
+        <div class="phead label"><span>Блюдо</span><span>Граммы</span><span>Ккал</span><span></span></div>
+        <div id="prevList" class="prev"></div>
+      </div>
+      <div class="note" id="note" hidden></div>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" id="addRow">+ блюдо</button>
+        <span class="spacer"></span>
+        <span id="prevTotal" class="label"></span>
+        <button class="btn" id="save">Добавить</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="label" style="margin-bottom:10px">Дневник дня</div>
+    <div class="meals" id="meals"></div>
+  </section>
+
+  <section>
+    <div class="label" style="margin-bottom:10px">Последние 7 дней</div>
+    <div class="week" id="week"></div>
+  </section>
+
+  <section class="card account" aria-label="Аккаунт">
+    <div class="row"><span class="label">Аккаунт</span><span class="spacer"></span><b id="who"></b></div>
+    <div class="row">
+      <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
+      <span class="spacer"></span>
+      <button class="ghost" id="logout">Выйти</button>
+    </div>
+    <div class="row" id="adminBox" hidden>
+      <input id="inviteName" class="txt" placeholder="Имя нового участника" aria-label="Имя нового участника">
+      <button class="btn" id="inviteBtn">Пригласить</button>
+    </div>
+    <div id="linkBox" class="linkbox" hidden>
+      <div class="msg" id="linkLabel"></div>
+      <div class="row"><input id="linkUrl" class="txt" readonly aria-label="Ссылка"><button class="ghost" id="copyLink">Копировать</button></div>
+    </div>
+  </section>
+
+  <p class="foot" id="foot">Оценки калорий приблизительные: Claude считает по типичным порциям и справочным значениям. По фото вес порции оценивается на глаз, поэтому проверяй граммы перед добавлением или уточняй словами.</p>
+</div>
+
+<script src="/app.js" defer></script>
+</body>
+</html>
