@@ -11,6 +11,7 @@ import { estimate, llmConfig, testConnection } from "./llm.js";
 import { conf, confNum, view as configView, update as configUpdate } from "./config.js";
 import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, inviteByToken, joinLink, createJoinLink, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
 import { sendCode, sendInvite, sendTest, mailConfigured } from "./mail.js";
+import { updaterState, requestUpdate } from "./updater.js";
 
 const PORT = Number(process.env.PORT || 3000);
 // Read from settings on every use, so edits in the app apply without a restart
@@ -282,6 +283,15 @@ app.register(async (api) => {
     if (err) return reply.code(400).send({ error: err });
     req.log.info({ by: req.user.id, keys: Object.keys(req.body?.values || {}) }, "settings updated");
     return { fields: configView() };
+  });
+
+  // update from git: the app only drops a request file; deploy/update.sh on the host does the work
+  api.get("/update", { preHandler: adminOnly }, async () => updaterState());
+  api.post("/update", { preHandler: adminOnly }, async (req, reply) => {
+    const r = requestUpdate();
+    if ("error" in r) return reply.code(r.code).send({ error: r.error });
+    req.log.info({ by: req.user.id }, "update requested");
+    return r;
   });
 
   api.post("/settings/test-mail", { preHandler: adminOnly }, async (req, reply) => {

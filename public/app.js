@@ -339,7 +339,7 @@ function go(v,replace){
   document.querySelectorAll(".tab[data-view]").forEach(t=>t.dataset.view===v?t.setAttribute("aria-current","page"):t.removeAttribute("aria-current"));
   document.body.classList.toggle("pushed",v==="settings");
   setTitle();window.scrollTo(0,0);
-  if(v==="settings"){if(me&&me.isAdmin){loadConfig();loadPeople()}if(!replace)history.pushState({v:"settings"},"")}
+  if(v==="settings"){if(me&&me.isAdmin){loadConfig();loadPeople();loadUpdate()}if(!replace)history.pushState({v:"settings"},"")}
   if(v==="week")renderWeek();
   if(v==="diary")renderDay();
 }
@@ -645,6 +645,40 @@ $("inviteForm").onsubmit=async ev=>{
   catch(e){iMsg(e.message,"err")}finally{$("inviteBtn").disabled=false}
 };
 
+/* ---------- update from GitHub (admins) ---------- */
+let updT=null,updWaitBack=false,updAsked=0;
+function uMsg(t,kind){const m=$("updMsg");m.textContent=t;m.className="msg"+(kind?" "+kind:"")}
+async function loadUpdate(){
+  clearTimeout(updT);
+  let d;
+  try{d=await api("/update",{timeout:8000})}
+  catch(e){ // the server restarts during an update: keep waiting
+    if(updWaitBack){uMsg("Перезапускаю приложение…");updT=setTimeout(loadUpdate,3000);return}
+    uMsg(e.message,"err");return}
+  const s=d.status,btn=$("updBtn");
+  const ver=s&&(s.to||s.from)||"";$("updVer").textContent=ver?"версия "+ver:"";$("updVer").hidden=!ver;
+  $("updLogBox").hidden=!d.log;$("updLog").textContent=d.log||"";
+  if(!d.installed){btn.disabled=true;uMsg("Кнопка ещё не подключена. Один раз выполни на сервере в папке приложения: sudo ./deploy/install-updater.sh");return}
+  const running=s&&s.state==="running", waiting=d.pending||(updAsked&&(!s||s.at<updAsked));
+  btn.disabled=running||waiting;
+  if(running){updWaitBack=true;uMsg(s.message+"…");updT=setTimeout(loadUpdate,3000);return}
+  if(waiting){
+    if(Date.now()-updAsked>20000&&d.pending)uMsg("Сервер не берёт запрос. Проверь на сервере: systemctl status kkal-update.path","err");
+    else uMsg("Запрос отправлен, жду сервер…");
+    updT=setTimeout(loadUpdate,2000);return}
+  if(updWaitBack&&s&&s.state==="done"&&/→/.test(s.message)){uMsg(s.message+". Перезагружаю…","ok");setTimeout(()=>location.reload(),1500);return}
+  updWaitBack=false;
+  if(s)uMsg(s.message+" · "+ago(s.at),s.state==="failed"?"err":s.state==="done"?"ok":"");
+  else uMsg("Скачать новую версию из GitHub и перезапустить приложение.");
+}
+$("updBtn").onclick=async()=>{
+  const b=$("updBtn");
+  if(!b.dataset.armed){b.dataset.armed=1;b.textContent="Обновить? Приложение перезапустится";haptic();setTimeout(()=>{delete b.dataset.armed;b.textContent="Обновить из GitHub"},4000);return}
+  delete b.dataset.armed;b.textContent="Обновить из GitHub";b.disabled=true;
+  try{await api("/update",{method:"POST"});updAsked=Date.now();uMsg("Запрос отправлен, жду сервер…");updT=setTimeout(loadUpdate,1500)}
+  catch(e){uMsg(e.message,"err");b.disabled=false}
+};
+
 /* ---------- settings panel ---------- */
 $("gear").onclick=()=>{haptic();go("settings")};
 $("back").onclick=()=>history.state&&history.state.v==="settings"?history.back():go("diary");
@@ -740,7 +774,7 @@ async function boot(){
   try{me=await api("/me")}catch(e){if(e.code!==401&&e.code!==undefined){$("login").hidden=true;$("app").hidden=false;toast("Сервер недоступен: "+e.message,true)}return false}
   if(location.search)history.replaceState(null,"","/");
   goal=me.goal;$("goal").value=goal;
-  renderAccount();$("people").hidden=!me.isAdmin;$("cfg").hidden=!me.isAdmin;
+  renderAccount();$("people").hidden=!me.isAdmin;$("updater").hidden=!me.isAdmin;$("cfg").hidden=!me.isAdmin;
   $("login").hidden=true;$("app").hidden=false;
   go(location.hash==="#week"?"week":"diary",true);setupInstallHint();
   await openDay();

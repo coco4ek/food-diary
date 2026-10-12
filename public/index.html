@@ -258,6 +258,8 @@ textarea#text{width:100%;min-height:76px;resize:vertical;border:none;background:
 .urow .who small{display:block;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .urow .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .joinrow{flex-wrap:wrap}
+#updLogBox summary{color:var(--muted);font-size:14px;padding:6px 0;cursor:pointer}
+#updLog{margin:6px 0 0;padding:10px;background:var(--soft);border-radius:10px;font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
 .joinrow button{flex:1 1 auto}
 .urow .acts button{font-size:13px;padding:6px 10px;min-height:34px}
 .urow.off .who{opacity:.55}
@@ -427,6 +429,12 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
         <div id="userList" class="ulist"></div>
         <div id="inviteList" class="ulist"></div>
         <div id="joinList" class="ulist"></div>
+      </section>
+      <section class="card" id="updater" hidden aria-label="Обновление">
+        <div class="row"><span class="label">Обновление</span><span class="spacer"></span><span class="pill" id="updVer"></span></div>
+        <div class="msg" id="updMsg">Скачать новую версию из GitHub и перезапустить приложение.</div>
+        <div class="row"><button class="btn" id="updBtn" type="button">Обновить из GitHub</button></div>
+        <details id="updLogBox" hidden><summary>Журнал</summary><pre id="updLog"></pre></details>
       </section>
       <div id="cfg" class="cfg" hidden></div>
     </section>
