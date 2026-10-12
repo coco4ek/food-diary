@@ -78,8 +78,11 @@ function normalize(raw: any): Estimate {
   return { dishes, note: typeof raw?.note === "string" ? raw.note.slice(0, 300) : "" };
 }
 
-async function chat(content: any[], maxTokens?: number, cancel?: AbortSignal): Promise<string> {
+export type Stats = { sec: number; model: string; thinking: boolean; promptTokens?: number; outTokens?: number; reasoningTokens?: number; imageKb: number };
+
+async function chat(content: any[], maxTokens?: number, cancel?: AbortSignal, stats?: Partial<Stats>): Promise<string> {
   const cfg = llmConfig();
+  const t0 = Date.now();
   if (!cfg.apiKey) throw Object.assign(new Error("API-ключ модели не задан. Администратор может указать его в «Настройках модели»."), { statusCode: 503 });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
@@ -97,6 +100,14 @@ async function chat(content: any[], maxTokens?: number, cancel?: AbortSignal): P
       const msg = body?.error?.message || body?.message || `HTTP ${res.status}`;
       throw Object.assign(new Error(`Ошибка модели: ${msg}`), { statusCode: 502 });
     }
+    if (stats) {
+      const u = body?.usage || {};
+      Object.assign(stats, {
+        sec: Math.round((Date.now() - t0) / 100) / 10, model: cfg.model, thinking: (cfg.extra as any)?.thinking?.type !== "disabled",
+        promptTokens: u.prompt_tokens, outTokens: u.completion_tokens,
+        reasoningTokens: u.completion_tokens_details?.reasoning_tokens ?? (body?.choices?.[0]?.message?.reasoning_content ? Math.round(String(body.choices[0].message.reasoning_content).length / 3) : undefined),
+      });
+    }
     const reply = body?.choices?.[0]?.message?.content;
     return Array.isArray(reply) ? reply.map((p: any) => p?.text ?? "").join("") : String(reply ?? "");
   } catch (e: any) {
@@ -113,10 +124,12 @@ async function chat(content: any[], maxTokens?: number, cancel?: AbortSignal): P
   }
 }
 
-export async function estimate(text: string, images: string[], cancel?: AbortSignal): Promise<Estimate> {
+export async function estimate(text: string, images: string[], cancel?: AbortSignal): Promise<Estimate & { stats: Partial<Stats> }> {
   const content: any[] = [{ type: "text", text: prompt(text, images.length > 0) }];
   for (const url of images) content.push({ type: "image_url", image_url: { url } });
-  return normalize(parseJson(await chat(content, undefined, cancel)));
+  const stats: Partial<Stats> = { imageKb: Math.round(images.reduce((n, u) => n + u.length * 0.75, 0) / 1024) };
+  const result = normalize(parseJson(await chat(content, undefined, cancel, stats)));
+  return { ...result, stats };
 }
 
 /** Cheap round-trip to check address, key and model from the settings screen. */

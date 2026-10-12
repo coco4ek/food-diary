@@ -174,7 +174,10 @@ app.register(async (api) => {
     const ac = new AbortController();
     reply.raw.on("close", () => { if (!reply.raw.writableFinished) ac.abort(); });
     try {
-      return await estimate(text, images, ac.signal);
+      const { stats, ...result } = await estimate(text, images, ac.signal);
+      req.log.info({ llm: stats, photos: images.length }, "estimate done");
+      // admins see how long it took and where the time went
+      return req.user.is_admin ? { ...result, stats } : result;
     } catch (e: any) {
       if (ac.signal.aborted) { refundUsage(req.user.id, date); req.log.info("estimate cancelled by client"); return; }
       req.log.warn({ err: e?.message }, "estimate failed");

@@ -253,6 +253,12 @@ async function estimate(){
     const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
     draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();haptic(12);
+    if(res.stats){const st=res.stats,total=Math.round((Date.now()-t0)/1000),model=st.sec||0;
+      const parts=[`Распознано за ${total} с`,`модель ${model} с`];
+      if(total-model>=3)parts.push(`связь ${Math.round(total-model)} с`);
+      if(st.reasoningTokens)parts.push(`размышления ${st.reasoningTokens} ток.`);
+      if(st.imageKb)parts.push(`фото ${st.imageKb} КБ`);
+      toast(parts.join(" · "))}
     $("more").open=false;
   }catch(e){
     if(e.code===-1||ctrl.signal.aborted)return; // cancelled: the message is already shown
@@ -309,14 +315,14 @@ function renderThumbs(){
     box.append(cam,gal)}
 }
 const toDataURL=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(b)});
-/* phone photos are large: shrink to 1568px JPEG before sending */
+/* phone photos are large: shrink to 1280px JPEG before sending (fewer image tokens = faster answer) */
 async function shrink(file){
   try{
     const bmp=await createImageBitmap(file);
-    const sc=Math.min(1,1568/Math.max(bmp.width,bmp.height));
+    const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
     const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
     c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
-    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.85));
+    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.82));
   }catch(e){return file}
 }
 
