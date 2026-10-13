@@ -295,15 +295,21 @@ textarea#text{width:100%;min-height:76px;resize:vertical;border:none;background:
 .otp.focus .otp-cells span.on{border-color:var(--accent);background:var(--surface)}
 .otp.focus .otp-cells span.on::after{content:"";width:2px;height:28px;background:var(--accent);border-radius:1px;animation:otpCaret 1s steps(1) infinite}
 .otp-cells span.fill{background:var(--surface);border-color:var(--line)}
-.otp-cells span.pop{animation:otpPop .22s cubic-bezier(.3,1.6,.5,1)}
-.otp.busy .otp-cells span{animation:otpWave .9s ease-in-out infinite;animation-delay:calc(var(--i)*80ms);border-color:var(--line)}
+/* slot-machine reels: each cell shows a strip of digits that rolls and lands on the typed one */
+.otp-cells .win{position:absolute;inset:0;overflow:hidden;border-radius:10px}
+.otp-cells .win::after{content:"";position:absolute;inset:0;pointer-events:none;transition:opacity .2s;
+  background:linear-gradient(var(--surface),transparent 28%,transparent 72%,var(--surface))}
+.otp.ok .otp-cells .win::after,.otp.err .otp-cells .win::after{opacity:0}
+.otp-cells .reel{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;flex-direction:column;font-style:normal;will-change:transform}
+.otp-cells .reel b{flex:0 0 100%;display:grid;place-items:center;font-weight:700}
+.otp-cells .reel.spin{animation:otpSpin .3s linear infinite}
+.otp.busy .otp-cells span{border-color:var(--line);background:var(--surface)}
 .otp.ok .otp-cells span{animation:otpOk .45s cubic-bezier(.3,1.5,.5,1) both;animation-delay:calc(var(--i)*60ms)}
 .otp.err .otp-cells{animation:otpShake .42s cubic-bezier(.36,.07,.19,.97)}
 .otp.err .otp-cells span{border-color:var(--warn);color:var(--warn)}
 .otp-in{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;border:0;padding:0;background:none;color:transparent;caret-color:transparent}
 @keyframes otpCaret{50%{opacity:0}}
-@keyframes otpPop{0%{transform:scale(.6)}100%{transform:scale(1)}}
-@keyframes otpWave{0%,100%{transform:translateY(0)}35%{transform:translateY(-7px)}}
+@keyframes otpSpin{from{transform:translateY(0)}to{transform:translateY(-1000%)}}
 @keyframes otpOk{0%{transform:scale(1)}45%{transform:scale(1.14);background:var(--c);color:#fff;border-color:var(--c)}100%{transform:scale(1);background:var(--c);color:#fff;border-color:var(--c)}}
 @keyframes otpShake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}
 @media (prefers-reduced-motion:reduce){.otp *{animation-duration:1ms!important;animation-iteration-count:1!important}}

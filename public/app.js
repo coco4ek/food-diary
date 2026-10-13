@@ -524,17 +524,38 @@ async function requestCode(){
 $("emailForm").onsubmit=ev=>{ev.preventDefault();requestCode()};
 $("lResend").onclick=()=>requestCode();
 $("lBack").onclick=()=>{$("codeForm").hidden=true;$("emailForm").hidden=false;loginMsg("");$("lEmail").focus()};
-/* six animated cells drawn from the one real input */
+/* six cells drawn from the one real input; digits roll in like slot-machine reels */
 const otp=$("otp"),otpCells=[...otp.querySelectorAll(".otp-cells span")];
 otpCells.forEach((c,i)=>c.style.setProperty("--i",i));
-let otpPrev="";
+const calm=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const rnd=()=>String(Math.floor(Math.random()*10));
+const reel=c=>{c.innerHTML='<i class="win"><i class="reel"></i></i>';return c.querySelector(".reel")};
+// roll a cell through a few random digits and land on `d` (with a small overshoot)
+function rollTo(c,d,{n=5,dur=380,delay=0}={}){
+  c.dataset.d=d;
+  if(calm){c.textContent=d;return Promise.resolve()}
+  const r=reel(c),strip=[...Array(n)].map(rnd).concat(d);
+  r.innerHTML=strip.map(x=>`<b>${x}</b>`).join("");
+  r.style.transform="translateY(0)";void r.offsetWidth;
+  r.style.transition=`transform ${dur}ms cubic-bezier(.18,.89,.32,1.18) ${delay}ms`;
+  r.style.transform=`translateY(-${(strip.length-1)*100}%)`;
+  return new Promise(ok=>setTimeout(ok,dur+delay));
+}
+// all reels spin while the code is being checked
+function spinAll(){
+  if(calm)return;
+  otpCells.forEach(c=>{const r=reel(c);r.className="reel spin";r.style.animationDelay=(-Math.random()*.3).toFixed(2)+"s";
+    r.innerHTML=[..."01234567890123456789"].map(x=>`<b>${x}</b>`).join("")});
+}
+// …then stop one by one, left to right, on the entered digits
+const stopAll=code=>Promise.all(otpCells.map((c,i)=>rollTo(c,code[i]||"",{n:7,dur:520,delay:i*110})));
 function renderOtp(){
   const v=$("lCode").value;
   otpCells.forEach((c,i)=>{
-    const d=v[i]||"";c.textContent=d;c.classList.toggle("fill",!!d);c.classList.toggle("on",i===Math.min(v.length,5)&&!(v.length===6&&i===5&&d));
-    if(d&&d!==otpPrev[i]){c.classList.remove("pop");void c.offsetWidth;c.classList.add("pop")}
+    const d=v[i]||"";c.classList.toggle("fill",!!d);c.classList.toggle("on",i===Math.min(v.length,5)&&!(v.length===6&&i===5&&d));
+    if(!d){if(c.dataset.d){c.textContent="";c.dataset.d=""}return}
+    if(d!==c.dataset.d)rollTo(c,d);
   });
-  otpPrev=v;
 }
 function setCode(v){$("lCode").value=v;otp.classList.remove("ok","err","busy");renderOtp()}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -549,15 +570,19 @@ $("lCode").addEventListener("click",otpEnd);$("lCode").addEventListener("keyup",
 renderOtp();
 $("codeForm").onsubmit=async ev=>{
   ev.preventDefault();const code=$("lCode").value;if(code.length!==6){loginMsg("Введи 6 цифр из письма",true);return}
-  $("lVerify").disabled=true;loginMsg("");otp.classList.remove("err","ok");otp.classList.add("busy");$("lCode").blur();
+  $("lVerify").disabled=true;loginMsg("");otp.classList.remove("err","ok");$("lCode").blur();
+  await sleep(calm?0:400); // let the last digit land first
+  otp.classList.add("busy");spinAll();const t0=Date.now();
+  // the reels spin at least ~0.8 s even when the server answers instantly
+  const settle=async()=>{await sleep(Math.max(0,800-(Date.now()-t0)));await stopAll(code);otp.classList.remove("busy")};
   try{const body={email:$("lTo").textContent,code};if(joinToken)body.join=joinToken;
     await api("/auth/verify",{method:"POST",body});joinToken=null;
-    otp.classList.remove("busy");otp.classList.add("ok");haptic(12);await sleep(820);
+    await settle();otp.classList.add("ok");haptic(12);await sleep(820);
     loginMsg("");setCode("");$("codeForm").hidden=true;$("emailForm").hidden=false;
     if(!(await boot()))loginMsg("Код принят, но браузер не сохранил вход. Разреши cookie для этого сайта и попробуй ещё раз.",true)}
   catch(e){
-    otp.classList.remove("busy");void otp.offsetWidth;otp.classList.add("err");haptic([30,40,30]);loginMsg(e.message,true);
-    await sleep(650);setCode("");otp.classList.add("err");$("lCode").focus();
+    await settle();void otp.offsetWidth;otp.classList.add("err");haptic([30,40,30]);loginMsg(e.message,true);
+    await sleep(700);setCode("");otp.classList.add("err");$("lCode").focus();
   }finally{otp.classList.remove("busy");$("lVerify").disabled=false}
 };
 
