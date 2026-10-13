@@ -510,7 +510,7 @@ async function requestCode(){
   try{
     const r=await api("/auth/request",{method:"POST",body:joinToken?{email,join:joinToken}:{email}});
     try{localStorage.setItem("kcal:email",email)}catch(e){}
-    $("lTo").textContent=email;$("emailForm").hidden=true;$("codeForm").hidden=false;$("lCode").value="";$("lCode").focus();
+    $("lTo").textContent=email;$("emailForm").hidden=true;$("codeForm").hidden=false;setCode("");$("lCode").focus();
     startResend(r.resendIn||60);return true;
   }catch(e){
     // a code was sent less than a minute ago: go straight to entering it
@@ -524,15 +524,41 @@ async function requestCode(){
 $("emailForm").onsubmit=ev=>{ev.preventDefault();requestCode()};
 $("lResend").onclick=()=>requestCode();
 $("lBack").onclick=()=>{$("codeForm").hidden=true;$("emailForm").hidden=false;loginMsg("");$("lEmail").focus()};
-$("lCode").addEventListener("input",()=>{const v=$("lCode").value.replace(/\D/g,"").slice(0,6);$("lCode").value=v;if(v.length===6)$("codeForm").requestSubmit()});
+/* six animated cells drawn from the one real input */
+const otp=$("otp"),otpCells=[...otp.querySelectorAll(".otp-cells span")];
+otpCells.forEach((c,i)=>c.style.setProperty("--i",i));
+let otpPrev="";
+function renderOtp(){
+  const v=$("lCode").value;
+  otpCells.forEach((c,i)=>{
+    const d=v[i]||"";c.textContent=d;c.classList.toggle("fill",!!d);c.classList.toggle("on",i===Math.min(v.length,5)&&!(v.length===6&&i===5&&d));
+    if(d&&d!==otpPrev[i]){c.classList.remove("pop");void c.offsetWidth;c.classList.add("pop")}
+  });
+  otpPrev=v;
+}
+function setCode(v){$("lCode").value=v;otp.classList.remove("ok","err","busy");renderOtp()}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+$("lCode").addEventListener("input",()=>{
+  const v=$("lCode").value.replace(/\D/g,"").slice(0,6);$("lCode").value=v;otp.classList.remove("err");renderOtp();
+  if(v.length===6)$("codeForm").requestSubmit()});
+// always type at the end, like separate boxes
+const otpEnd=()=>{const i=$("lCode"),n=i.value.length;try{i.setSelectionRange(n,n)}catch(e){}};
+$("lCode").addEventListener("focus",()=>{otp.classList.add("focus");otpEnd();renderOtp()});
+$("lCode").addEventListener("blur",()=>otp.classList.remove("focus"));
+$("lCode").addEventListener("click",otpEnd);$("lCode").addEventListener("keyup",otpEnd);
+renderOtp();
 $("codeForm").onsubmit=async ev=>{
   ev.preventDefault();const code=$("lCode").value;if(code.length!==6){loginMsg("Введи 6 цифр из письма",true);return}
-  $("lVerify").disabled=true;loginMsg("Проверяю…");
+  $("lVerify").disabled=true;loginMsg("");otp.classList.remove("err","ok");otp.classList.add("busy");$("lCode").blur();
   try{const body={email:$("lTo").textContent,code};if(joinToken)body.join=joinToken;
     await api("/auth/verify",{method:"POST",body});joinToken=null;
-    loginMsg("");$("codeForm").hidden=true;$("emailForm").hidden=false;
+    otp.classList.remove("busy");otp.classList.add("ok");haptic(12);await sleep(820);
+    loginMsg("");setCode("");$("codeForm").hidden=true;$("emailForm").hidden=false;
     if(!(await boot()))loginMsg("Код принят, но браузер не сохранил вход. Разреши cookie для этого сайта и попробуй ещё раз.",true)}
-  catch(e){loginMsg(e.message,true);$("lCode").select()}finally{$("lVerify").disabled=false}
+  catch(e){
+    otp.classList.remove("busy");void otp.offsetWidth;otp.classList.add("err");haptic([30,40,30]);loginMsg(e.message,true);
+    await sleep(650);setCode("");otp.classList.add("err");$("lCode").focus();
+  }finally{otp.classList.remove("busy");$("lVerify").disabled=false}
 };
 
 /* ---------- account ---------- */

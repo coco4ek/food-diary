@@ -287,6 +287,26 @@ textarea#text{width:100%;min-height:76px;resize:vertical;border:none;background:
 .login p{margin:0;color:var(--muted)}
 .lcard{gap:14px}
 .txt.big{font-size:18px;padding:14px 16px;min-height:52px}
+/* code entry: six cells over one real input (keeps iOS/Android code autofill and paste) */
+.otp{position:relative;margin-top:8px}
+.otp-cells{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.otp-cells span{position:relative;display:grid;place-items:center;aspect-ratio:5/6;max-height:64px;border-radius:12px;background:var(--soft);
+  border:2px solid transparent;font:700 28px/1 var(--num);color:var(--ink);transition:border-color .15s,background .25s,color .25s,transform .15s}
+.otp.focus .otp-cells span.on{border-color:var(--accent);background:var(--surface)}
+.otp.focus .otp-cells span.on::after{content:"";width:2px;height:28px;background:var(--accent);border-radius:1px;animation:otpCaret 1s steps(1) infinite}
+.otp-cells span.fill{background:var(--surface);border-color:var(--line)}
+.otp-cells span.pop{animation:otpPop .22s cubic-bezier(.3,1.6,.5,1)}
+.otp.busy .otp-cells span{animation:otpWave .9s ease-in-out infinite;animation-delay:calc(var(--i)*80ms);border-color:var(--line)}
+.otp.ok .otp-cells span{animation:otpOk .45s cubic-bezier(.3,1.5,.5,1) both;animation-delay:calc(var(--i)*60ms)}
+.otp.err .otp-cells{animation:otpShake .42s cubic-bezier(.36,.07,.19,.97)}
+.otp.err .otp-cells span{border-color:var(--warn);color:var(--warn)}
+.otp-in{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;border:0;padding:0;background:none;color:transparent;caret-color:transparent}
+@keyframes otpCaret{50%{opacity:0}}
+@keyframes otpPop{0%{transform:scale(.6)}100%{transform:scale(1)}}
+@keyframes otpWave{0%,100%{transform:translateY(0)}35%{transform:translateY(-7px)}}
+@keyframes otpOk{0%{transform:scale(1)}45%{transform:scale(1.14);background:var(--c);color:#fff;border-color:var(--c)}100%{transform:scale(1);background:var(--c);color:#fff;border-color:var(--c)}}
+@keyframes otpShake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}
+@media (prefers-reduced-motion:reduce){.otp *{animation-duration:1ms!important;animation-iteration-count:1!important}}
 .txt.code{letter-spacing:.45em;font-weight:700;text-align:center;font-size:26px;font-family:var(--num)}
 .btn.wide{width:100%;min-height:52px;font-size:17px}
 .hint{color:var(--muted);font-size:13px}
@@ -333,9 +353,12 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
   </form>
   <form class="card lcard" id="codeForm" hidden novalidate>
     <p class="sent">Код отправлен на <b id="lTo"></b></p>
-    <label class="fld" for="lCode"><span>Код из письма</span>
-      <input id="lCode" class="txt big code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required>
-    </label>
+    <div class="fld"><span>Код из письма</span>
+      <div class="otp" id="otp">
+        <div class="otp-cells" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <input id="lCode" class="otp-in" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" aria-label="Код из письма" required>
+      </div>
+    </div>
     <button class="btn wide" id="lVerify" type="submit">Войти</button>
     <div class="row">
       <button type="button" class="linkbtn" id="lBack">Другая почта</button>
