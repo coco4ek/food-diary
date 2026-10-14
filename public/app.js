@@ -62,14 +62,14 @@ async function prefetch(from,to){
   const {days}=await api(`/days?from=${missing[0]}&to=${missing[missing.length-1]}`);
   for(const k of missing)if(!(k in cache)){const v=days[k]||{entries:[]};v.entries=(v.entries||[]).map(normEntry);cache[k]=v}
 }
-const normI=i=>({name:String(i.name||"Ингредиент"),grams:+i.grams||0,kcal:+i.kcal||0,protein:+i.protein||0,fat:+i.fat||0,carbs:+i.carbs||0});
+const normI=i=>({name:String(i.name||"Ингредиент"),grams:+i.grams||0,kcal:+i.kcal||0,protein:+i.protein||0,fat:+i.fat||0,carbs:+i.carbs||0,...(i.fiber!=null?{fiber:+i.fiber||0}:{})});
 const normEntry=e=>{if(!e.dishes){e.dishes=(e.items||[]).map(i=>({name:i.name,items:[i]}));delete e.items}return e};
 async function getDay(k){ if(!(k in cache)){const d=new Date(k+"T12:00:00");await prefetch(d,d)} return cache[k]; }
-const sumI=items=>items.reduce((t,i)=>(t.kcal+=+i.kcal||0,t.protein+=+i.protein||0,t.fat+=+i.fat||0,t.carbs+=+i.carbs||0,t.grams+=+i.grams||0,t),{kcal:0,protein:0,fat:0,carbs:0,grams:0});
-const scale=(i,f)=>{i.grams*=f;i.kcal*=f;i.protein*=f;i.fat*=f;i.carbs*=f};
+const sumI=items=>items.reduce((t,i)=>(t.kcal+=+i.kcal||0,t.protein+=+i.protein||0,t.fat+=+i.fat||0,t.carbs+=+i.carbs||0,t.fiber+=+i.fiber||0,t.grams+=+i.grams||0,i.fiber!=null&&(t.hasFiber=true),t),{kcal:0,protein:0,fat:0,carbs:0,fiber:0,grams:0,hasFiber:false});
+const scale=(i,f)=>{i.grams*=f;i.kcal*=f;i.protein*=f;i.fat*=f;i.carbs*=f;if(i.fiber!=null)i.fiber*=f};
 /* Per-gram values are remembered on first edit, so clearing the field (0 g) never loses the ratio. */
-const dens=it=>it._d||(it.grams>0?(it._d={kcal:it.kcal/it.grams,protein:it.protein/it.grams,fat:it.fat/it.grams,carbs:it.carbs/it.grams}):null);
-function setGrams(it,g){const d=dens(it);it.grams=g;if(d){it.kcal=d.kcal*g;it.protein=d.protein*g;it.fat=d.fat*g;it.carbs=d.carbs*g}}
+const dens=it=>it._d||(it.grams>0?(it._d={kcal:it.kcal/it.grams,protein:it.protein/it.grams,fat:it.fat/it.grams,carbs:it.carbs/it.grams,fiber:it.fiber!=null?it.fiber/it.grams:null}):null);
+function setGrams(it,g){const d=dens(it);it.grams=g;if(d){it.kcal=d.kcal*g;it.protein=d.protein*g;it.fat=d.fat*g;it.carbs=d.carbs*g;if(d.fiber!=null)it.fiber=d.fiber*g}}
 function setKcal(it,v){it.kcal=v;if(it.grams>0){const d=dens(it)||{protein:0,fat:0,carbs:0};it._d={...d,kcal:v/it.grams}}}
 /* "120 г" that turns into a number field; commits on Enter/blur, Esc cancels */
 function gramsBtn(grams,label,onCommit){
@@ -84,7 +84,7 @@ function gramsBtn(grams,label,onCommit){
   };
   return b;
 }
-const macroTxt=t=>`Б ${r1(t.protein)} · Ж ${r1(t.fat)} · У ${r1(t.carbs)}`;
+const macroTxt=t=>`Б ${r1(t.protein)} · Ж ${r1(t.fat)} · У ${r1(t.carbs)}${+t.fiber>=.5?` · Кл ${r1(t.fiber)}`:""}`;
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(label,fn){const x=el("button","x","×");x.setAttribute("aria-label",label);x.onclick=ev=>{ev.stopPropagation();fn()};return x}
 
@@ -115,7 +115,7 @@ function renderDay(){
   $("ringProg").setAttribute("stroke",left<0?"var(--warn)":"var(--accent)");
   // macro targets: 30% / 30% / 40% of goal kcal
   const tgt={p:goal*.3/4,f:goal*.3/9,c:goal*.4/4};
-  for(const [id,v,tg] of [["p",t.protein,tgt.p],["f",t.fat,tgt.f],["c",t.carbs,tgt.c]]){
+  for(const [id,v,tg] of [["p",t.protein,tgt.p],["f",t.fat,tgt.f],["c",t.carbs,tgt.c],["x",t.fiber,30]]){
     $("b"+id).style.width=Math.min(v/tg*100,100)+"%";
     $("t"+id).textContent=`${Math.round(v)} / ${Math.round(tg)} г`;
   }
@@ -267,9 +267,16 @@ function corrList(rows,y,up,down){
     ["Вес еды в тот же день",r=>r.t.grams],["Вес еды накануне",r=>r.prev?.food?r.prev.t.grams:null],
     ["Углеводы накануне",r=>r.prev?.food?r.prev.t.carbs:null],["Жиры накануне",r=>r.prev?.food?r.prev.t.fat:null],
     ["Белки накануне",r=>r.prev?.food?r.prev.t.protein:null],
+    ["Клетчатка в тот же день",r=>r.t.hasFiber?r.t.fiber:null],["Клетчатка накануне",r=>r.prev?.food&&r.prev.t.hasFiber?r.prev.t.fiber:null],
   ];
+  // food tags: was there such a dish that day / the day before (only tags seen on some days but not all)
+  const tagDays={};for(const r of rows)for(const t of r.tags)tagDays[t]=(tagDays[t]||0)+1;
+  for(const [t,c] of Object.entries(tagDays))if(c>=2&&c<=rows.length-2){
+    const T=t[0].toUpperCase()+t.slice(1);
+    feats.push([`${T} в тот же день`,r=>r.tagged?(r.tags.has(t)?1:0):null],[`${T} накануне`,r=>r.prev?.food&&r.prev.tagged?(r.prev.tags.has(t)?1:0):null]);
+  }
   const res=feats.map(([name,f])=>{const xs=[],ys=[];for(const r of rows){const x=f(r),v=y(r);if(x!=null&&v!=null){xs.push(x);ys.push(v)}}
-    return{name,r:xs.length>=MIN_DAYS?pearson(xs,ys):null,n:xs.length}}).filter(x=>x.r!==null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
+    return{name,r:xs.length>=MIN_DAYS?pearson(xs,ys):null,n:xs.length}}).filter(x=>x.r!==null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r)).slice(0,8);
   const list=el("div");
   for(const x of res){
     const c=el("div","corr"),top=el("div","cr");
@@ -286,7 +293,8 @@ async function renderWcReport(){
   try{await prefetch(start,end)}catch(e){return}
   const ds=[];for(let d=new Date(start);key(d)<=key(end);d.setDate(d.getDate()+1))ds.push(new Date(d));
   const info=ds.map(d=>{const v=cache[key(d)]||{entries:[]},t=totals(v.entries),marks=marksOf(v),typed=marks.filter(m=>m.t);
-    return{d,k:key(d),t,marks,count:marks.length,food:t.kcal>0,entries:v.entries,type:typed.length?typed.reduce((a,m)=>a+m.t,0)/typed.length:null}});
+    const dishes=v.entries.flatMap(e=>e.dishes||[]),tags=new Set(dishes.flatMap(x=>x.tags||[]));
+    return{d,k:key(d),t,marks,tags,tagged:dishes.some(x=>Array.isArray(x.tags)),count:marks.length,food:t.kcal>0,entries:v.entries,type:typed.length?typed.reduce((a,m)=>a+m.t,0)/typed.length:null}});
   const first=info.findIndex(x=>x.count>0);
   const body=$("wcBody");body.innerHTML="";
   if(first<0){$("wcN").textContent="";body.append(el("div","msg","Отмечай походы кнопкой «Туалет» на экране «Сегодня» и записывай еду. Через неделю здесь появится, как одно связано с другим."));return}
@@ -296,7 +304,7 @@ async function renderWcReport(){
   const counts=rows.map(r=>r.count),avg=n?counts.reduce((a,b)=>a+b,0)/n:0;
   // hours from the previous meal to each visit
   const gaps=[];info.slice(first).forEach((x,i)=>{const meals=[...(info[first+i-1]?.entries||[]),...x.entries].map(e=>e.at).filter(Boolean);
-    for(const m of x.marks){const before=meals.filter(a=>a<m.at);if(before.length)gaps.push((m.at-Math.max(...before))/36e5)}});
+    for(const m of x.marks){const before=meals.filter(a=>a<m.at&&m.at-a<=864e5);if(before.length)gaps.push((m.at-Math.max(...before))/36e5)}});
   gaps.sort((a,b)=>a-b);const med=gaps.length?gaps[Math.floor(gaps.length/2)]:null;
   const stat=(items)=>{const st=el("div","wcstats");for(const [v,l] of items){const c=el("div");c.append(el("b",null,v),el("small",null,l));st.append(c)}return st};
   body.append(stat([[n?dec(avg):"—","в среднем за день"],[n?String(Math.max(...counts)):"—","больше всего"],[med!==null?(med<1?Math.round(med*60)+" мин":dec(med)+" ч"):"—","от еды до туалета"]]));
@@ -393,7 +401,7 @@ async function estimate(){
     const images=await Promise.all(photos.map(async p=>p.data||(p.data=await toDataURL(p.blob))));
     const res=await api("/estimate",{method:"POST",signal:ctrl.signal,timeout:((me&&me.llmTimeoutSec)||300)*1000+30000,body:{text,images,date:key(new Date())}});
     const raw=res&&Array.isArray(res.dishes)?res.dishes:res&&Array.isArray(res.items)?res.items.map(i=>({name:i.name,items:[i]})):[];
-    const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
+    const dishes=raw.map(d=>({name:String(d.name||"Блюдо"),tags:Array.isArray(d.tags)?d.tags.map(String):[],items:(Array.isArray(d.items)&&d.items.length?d.items:[d]).map(normI),_open:false})).filter(d=>d.items.length);
     if(!dishes.length){showMsg(res&&res.note?String(res.note):"Не получилось разобрать еду. Попробуй другое фото или добавь пару слов.",true);return}
     draft=dishes;draftNote=String(res.note||"");showMsg("");renderDraft();haptic(12);
     if(res.stats){const st=res.stats,total=Math.round((Date.now()-t0)/1000),model=st.sec||0;
@@ -421,7 +429,7 @@ function resetEntry(){
 async function saveDraft(){ try{ await saveDraftInner() }catch(e){ console.error(e); showMsg("Не удалось добавить: "+(e.message||e),true) } }
 async function saveDraftInner(){
   const dishes=draft.map(d=>{const dn=d.name.trim()||(d.items[0]&&d.items[0].name.trim())||"Блюдо";
-    return{name:dn,items:d.items.filter(i=>i.kcal>0).map(i=>({...normI(i),name:i.name.trim()||dn}))}}).filter(d=>d.items.length);
+    return{name:dn,...(d.tags&&d.tags.length?{tags:d.tags}:{}),items:d.items.filter(i=>i.kcal>0).map(i=>({...normI(i),name:i.name.trim()||dn}))}}).filter(d=>d.items.length);
   if(!dishes.length){showMsg("Укажи калории хотя бы для одного ингредиента.",true);return}
   const k=key(day); const d=await getDay(k);
   d.entries.push({id:uidGen(),meal,text:$("text").value.trim(),at:Date.now(),dishes});
@@ -735,6 +743,10 @@ function showLink(url,label){
 }
 $("copyLink").onclick=async()=>{try{await navigator.clipboard.writeText($("linkUrl").value);$("copyLink").textContent="Скопировано"}catch(e){$("linkUrl").select()}setTimeout(()=>$("copyLink").textContent="Копировать",1500)};
 $("deviceLink").onclick=async()=>{try{const {url}=await api("/login-link",{method:"POST"});showLink(url,"Открой эту ссылку на другом устройстве в течение 15 минут. Сработает один раз.")}catch(e){showMsg(e.message,true)}};
+$("exportBtn").onclick=()=>{
+  const a=document.createElement("a");a.href="/api/export.xlsx?tz="+new Date().getTimezoneOffset();a.download="";document.body.append(a);a.click();a.remove();
+  toast("Готовлю файл…");
+};
 $("logout").onclick=async()=>{try{await api("/logout",{method:"POST"})}catch(e){}location.href="/"};
 function renderAccount(){
   $("who").textContent=me.name;

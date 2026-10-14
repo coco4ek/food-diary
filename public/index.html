@@ -21,7 +21,7 @@
 :root{
   --bg:#EEF1EC; --surface:#FFFFFF; --ink:#18211A; --muted:#66705F; --line:#DCE2D7; --sep:#E6EBE2;
   --accent:#C8442F; --accent-ink:#FFFFFF; --soft:#E3E8DF; --press:#E9EEE5;
-  --p:#3A66C4; --f:#D39A1E; --c:#3E8C5A; --warn:#B3261E;
+  --p:#3A66C4; --f:#D39A1E; --c:#3E8C5A; --warn:#B3261E; --fi:#7A5BB5;
   --bar:rgba(238,241,236,.82); --scrim:rgba(10,14,10,.38);
   --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --num:ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -32,12 +32,12 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E120E; --surface:#1A1F1A; --ink:#E9EEE6; --muted:#97A190; --line:#2B332B; --sep:#262D26;
   --accent:#EC6A50; --accent-ink:#1A0D0A; --soft:#242B24; --press:#232A23;
-  --p:#7FA6F2; --f:#EDBB52; --c:#6FC58C; --warn:#F28A80;
+  --p:#7FA6F2; --f:#EDBB52; --c:#6FC58C; --warn:#F28A80; --fi:#B49AE8;
   --bar:rgba(14,18,14,.8); --scrim:rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E120E; --surface:#1A1F1A; --ink:#E9EEE6; --muted:#97A190; --line:#2B332B; --sep:#262D26;
   --accent:#EC6A50; --accent-ink:#1A0D0A; --soft:#242B24; --press:#232A23;
-  --p:#7FA6F2; --f:#EDBB52; --c:#6FC58C; --warn:#F28A80;
+  --p:#7FA6F2; --f:#EDBB52; --c:#6FC58C; --warn:#F28A80; --fi:#B49AE8;
   --bar:rgba(14,18,14,.8); --scrim:rgba(0,0,0,.55); color-scheme:dark}
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -452,6 +452,7 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
           <div class="macro"><span>Белки</span><div class="bar"><i id="bp" style="background:var(--p);width:0"></i></div><span id="tp">0 г</span></div>
           <div class="macro"><span>Жиры</span><div class="bar"><i id="bf" style="background:var(--f);width:0"></i></div><span id="tf">0 г</span></div>
           <div class="macro"><span>Углеводы</span><div class="bar"><i id="bc" style="background:var(--c);width:0"></i></div><span id="tc">0 г</span></div>
+          <div class="macro"><span>Клетчатка</span><div class="bar"><i id="bx" style="background:var(--fi);width:0"></i></div><span id="tx">0 г</span></div>
         </div>
       </section>
       <div class="meals" id="meals"></div>
@@ -486,6 +487,9 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
           <div class="row"><input id="aEmail" class="txt" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Почта"><button class="ghost" id="aSend" type="submit">Получить код</button></div>
           <div class="row" id="aCodeRow" hidden><input id="aCode" class="txt" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма" aria-label="Код из письма"><button class="btn" id="aVerify" type="button">Привязать</button></div>
         </form>
+        <div class="row">
+          <button class="ghost" id="exportBtn" type="button">Скачать данные (Excel)</button>
+        </div>
         <div class="row">
           <button class="ghost" id="deviceLink">Войти на другом устройстве</button>
           <span class="spacer"></span>

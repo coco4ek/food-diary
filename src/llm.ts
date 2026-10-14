@@ -32,9 +32,13 @@ export function llmConfig() {
   };
 }
 
-export type Ingredient = { name: string; grams: number; kcal: number; protein: number; fat: number; carbs: number };
-export type Dish = { name: string; items: Ingredient[] };
+export type Ingredient = { name: string; grams: number; kcal: number; protein: number; fat: number; carbs: number; fiber: number };
+export type Dish = { name: string; tags: string[]; items: Ingredient[] };
 export type Estimate = { dishes: Dish[]; note: string };
+
+/** Fixed food tags so the diary can be compared day to day (dairy vs stool, coffee, etc.). */
+export const TAGS = ["молочное", "кофе", "алкоголь", "газировка", "сладкое", "выпечка", "жареное", "острое", "фастфуд",
+  "овощи", "фрукты", "ягоды", "цельнозерновое", "бобовые", "орехи", "мясо", "рыба", "яйца", "кисломолочное"];
 
 function prompt(text: string, hasPhotos: boolean) {
   return `Ты — нутрициолог. Оцени пищевую ценность того, что съел человек${hasPhotos ? " (на фото" + (text ? " и в описании" : "") + ")" : ""}.
@@ -48,8 +52,10 @@ function prompt(text: string, hasPhotos: boolean) {
 - По фото оцени вес порции по размеру тарелки, приборов и рук. Если на фото упаковка с этикеткой — бери данные с этикетки.
 - Если на фото нет еды, верни пустой dishes и объясни в note.
 - Используй справочные значения (как в таблицах калорийности), учитывай способ приготовления.
+- Для каждого ингредиента укажи клетчатку (пищевые волокна) в граммах — "fiber".
+- Для каждого блюда укажи "tags" — подходящие ярлыки только из списка: ${TAGS.join(", ")}. Если ни один не подходит — пустой массив.
 ${llmConfig().promptExtra ? "- Дополнительно: " + llmConfig().promptExtra + "\n" : ""}Ответь только JSON без пояснений вокруг, вида:
-{"dishes":[{"name":"Яичница с беконом","items":[{"name":"Яйцо куриное","grams":110,"kcal":157,"protein":13.9,"fat":11.4,"carbs":0.8},{"name":"Бекон","grams":30,"kcal":140,"protein":4.5,"fat":13.5,"carbs":0},{"name":"Масло подсолнечное","grams":5,"kcal":45,"protein":0,"fat":5,"carbs":0}]}],"note":"короткое пояснение допущений, до 140 символов, или пустая строка"}`;
+{"dishes":[{"name":"Яичница с беконом","tags":["яйца","мясо","жареное"],"items":[{"name":"Яйцо куриное","grams":110,"kcal":157,"protein":13.9,"fat":11.4,"carbs":0.8,"fiber":0},{"name":"Бекон","grams":30,"kcal":140,"protein":4.5,"fat":13.5,"carbs":0,"fiber":0},{"name":"Масло подсолнечное","grams":5,"kcal":45,"protein":0,"fat":5,"carbs":0,"fiber":0}]}],"note":"короткое пояснение допущений, до 140 символов, или пустая строка"}`;
 }
 
 /** Tolerant JSON extraction: whole reply, a ```fence```, or first { … last }. */
@@ -71,9 +77,10 @@ function normalize(raw: any): Estimate {
   const dishes = list.slice(0, 20).map((d) => {
     const items = (Array.isArray(d?.items) && d.items.length ? d.items : [d]).slice(0, 15).map((i: any) => ({
       name: str(i?.name, "Ингредиент"), grams: num(i?.grams), kcal: num(i?.kcal),
-      protein: num(i?.protein), fat: num(i?.fat), carbs: num(i?.carbs),
+      protein: num(i?.protein), fat: num(i?.fat), carbs: num(i?.carbs), fiber: num(i?.fiber),
     }));
-    return { name: str(d?.name, items[0]?.name || "Блюдо"), items };
+    const tags: string[] = Array.isArray(d?.tags) ? [...new Set<string>(d.tags.map((t: any) => String(t).trim().toLowerCase()).filter((t: string) => TAGS.includes(t)))] : [];
+    return { name: str(d?.name, items[0]?.name || "Блюдо"), tags, items };
   }).filter((d) => d.items.length);
   return { dishes, note: typeof raw?.note === "string" ? raw.note.slice(0, 300) : "" };
 }

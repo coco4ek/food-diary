@@ -12,6 +12,7 @@ import { conf, confNum, view as configView, update as configUpdate } from "./con
 import { AuthError, normEmail, isEmail, checkAllowed, issueCode, checkCode, completeSignIn, ipLimit, inviteEmail, inviteByToken, joinLink, createJoinLink, isStaticCode, staticCodeEnabled, staticCodeEmail, verifyGuard, verifyFailed, verifyOk } from "./auth.js";
 import { sendCode, sendInvite, sendTest, mailConfigured } from "./mail.js";
 import { updaterState, requestUpdate } from "./updater.js";
+import { buildExport } from "./export.js";
 
 const PORT = Number(process.env.PORT || 3000);
 // Read from settings on every use, so edits in the app apply without a restart
@@ -139,6 +140,19 @@ app.register(async (api) => {
       db.prepare(`UPDATE users SET name = ? WHERE id = ?`).run(req.body.name.trim().slice(0, 60), req.user.id);
     }
     return { ok: true };
+  });
+
+  // the whole diary as an Excel file (tz = browser getTimezoneOffset(), for local times)
+  api.get<{ Querystring: { tz?: string } }>("/export.xlsx", async (req, reply) => {
+    const tz = Math.max(-840, Math.min(840, Math.round(Number(req.query.tz) || 0)));
+    const file = buildExport(req.user.id, tz, req.user.goal);
+    const stamp = new Date(Date.now() - tz * 60_000).toISOString().slice(0, 10);
+    req.log.info({ user: req.user.id, bytes: file.length }, "export");
+    return reply
+      .header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("content-disposition", `attachment; filename="foodiy-${stamp}.xlsx"`)
+      .header("cache-control", "no-store")
+      .send(Buffer.from(file));
   });
 
   api.get<{ Querystring: { from: string; to: string } }>("/days", async (req, reply) => {
