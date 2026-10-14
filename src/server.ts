@@ -153,11 +153,15 @@ app.register(async (api) => {
     if (!DATE.test(date) || !Array.isArray(entries)) return reply.code(400).send({ error: "Неверные данные дня" });
     const size = JSON.stringify(entries).length;
     if (size > 512 * 1024) return reply.code(413).send({ error: "Слишком много записей за день" });
-    // toilet visits: timestamps (ms) of that day
+    // toilet visits of that day: {at: ms, t?: Bristol type 1–7}; bare timestamps from the first version are accepted
     const t = req.body?.toilet;
-    if (t !== undefined && (!Array.isArray(t) || t.length > 50 || !t.every((x) => Number.isFinite(x) && x > 0)))
+    const mark = (x: any) => (Number.isFinite(x) && x > 0 ? { at: Math.round(x) }
+      : x && Number.isFinite(x.at) && x.at > 0 && (x.t === undefined || x.t === null || (Number.isInteger(x.t) && x.t >= 1 && x.t <= 7))
+        ? (x.t ? { at: Math.round(x.at), t: x.t } : { at: Math.round(x.at) }) : null);
+    const marks = Array.isArray(t) ? t.map(mark) : [];
+    if (t !== undefined && (!Array.isArray(t) || t.length > 50 || marks.some((m) => !m)))
       return reply.code(400).send({ error: "Неверные отметки" });
-    const toilet = Array.isArray(t) && t.length ? (t as number[]).map(Math.round).sort((a, b) => a - b) : undefined;
+    const toilet = marks.length ? (marks as { at: number; t?: number }[]).sort((a, b) => a.at - b.at) : undefined;
     putDay(req.user.id, date, toilet ? { entries, toilet } : { entries });
     return { ok: true };
   });

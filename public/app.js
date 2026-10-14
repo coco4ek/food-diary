@@ -179,43 +179,70 @@ async function renderWeek(){
   });
   if(view==="week")renderWcReport();
 }
-/* ---------- toilet log: one tap = one mark with the time ---------- */
+/* ---------- toilet log: one tap = one mark with the time, then the stool type (Bristol scale 1–7) ---------- */
 const hm=ts=>new Date(ts).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
 const times=n=>n%10===1&&n%100!==11?"раз":[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?"раза":"раз";
-let wcEditing=null;
+const BRISTOL=[null,
+  ["Твёрдые комки","сильный запор"],["Комковатая колбаска","запор"],["Колбаска с трещинами","норма"],
+  ["Гладкая и мягкая","норма"],["Мягкие кусочки","мягче нормы"],["Кашица","лёгкая диарея"],["Жидкий","диарея"]];
+const bsColor=t=>t<=2?"var(--f)":t<=4?"var(--c)":t===5?"var(--muted)":"var(--warn)";
+const BS_SVG=[null,
+  '<circle cx="7" cy="11" r="4"/><circle cx="16" cy="9" r="4.4"/><circle cx="25" cy="11.5" r="3.8"/>',
+  '<circle cx="7" cy="10" r="4.6"/><circle cx="13" cy="9" r="4.8"/><circle cx="19.5" cy="10.5" r="4.6"/><circle cx="25.5" cy="9.5" r="4.4"/>',
+  '<rect x="2.5" y="4.5" width="27" height="11" rx="5.5"/><path d="M9 4.5v3.5M15.5 15.5v-4M21 4.5v3M26 15.5v-3" stroke="var(--surface)" stroke-width="1.6" stroke-linecap="round"/>',
+  '<rect x="2" y="5" width="28" height="10" rx="5"/>',
+  '<ellipse cx="7.5" cy="10.5" rx="4.8" ry="3.4"/><ellipse cx="16.5" cy="9" rx="4.4" ry="3.2"/><ellipse cx="25" cy="11" rx="4.6" ry="3.3"/>',
+  '<path d="M3 12c1-4 4-5 6-3 1-3 5-4 6.5-1 2-3 5.5-2 6 .5 3-1.5 6.5.5 5.5 3.5-1 3-4 2.5-5.5 2-2 2.5-5 2-6.5.5-2 1.8-5 1.5-6-.3-3 .8-6.5-.2-6-3.2z"/>',
+  '<path d="M2 13.5c2.5-2.2 5-2.2 7.5 0s5 2.2 7.5 0 5-2.2 7.5 0 4.2 2 5.5.6V17H2z"/><circle cx="9" cy="7" r="1.6"/><circle cx="17" cy="5" r="1.3"/><circle cx="23.5" cy="8" r="1.5"/>'];
+const bsIcon=t=>`<svg viewBox="0 0 32 20" aria-hidden="true" fill="currentColor">${BS_SVG[t]}</svg>`;
+const marksOf=d=>(d&&d.toilet||[]).map(x=>typeof x==="number"?{at:x}:x).sort((a,b)=>a.at-b.at);
+let wcPick=null,wcNew=false; // the mark whose editor is open; wcNew = just added (offer «Пропустить»)
 function renderWc(){
   const card=$("wc");card.hidden=!(me&&me.toilet);if(card.hidden)return;
-  const list=(dayData.toilet||[]).slice().sort((a,b)=>a-b),n=list.length;
-  const isToday=key(day)===key(new Date());
-  $("wcCount").textContent=n?`${n} ${times(n)}${isToday?" сегодня":""} · последний в ${hm(list[n-1])}`:(isToday?"Сегодня ещё не отмечено":"Отметок нет");
+  const list=marksOf(dayData),n=list.length,isToday=key(day)===key(new Date());
+  $("wcCount").textContent=n?`${n} ${times(n)}${isToday?" сегодня":""} · последний в ${hm(list[n-1].at)}`:(isToday?"Сегодня ещё не отмечено":"Отметок нет");
   const box=$("wcList");box.innerHTML="";
-  for(const ts of list){
-    if(ts===wcEditing){
-      const w=el("span","wcedit"),inp=el("input");inp.type="time";inp.value=hm(ts);inp.setAttribute("aria-label","Время");
-      inp.onchange=()=>{const [h,m]=inp.value.split(":").map(Number);if(isNaN(h))return;const d=new Date(ts);d.setHours(h,m,0,0);wcEditing=d.getTime();wcSet(list.map(x=>x===ts?wcEditing:x))};
-      inp.onblur=()=>setTimeout(()=>{if(wcEditing!==null&&document.activeElement?.closest?.(".wcedit")!==w){wcEditing=null;renderWc()}},150);
-      w.append(inp,xbtn("Удалить отметку",()=>{wcEditing=null;const was=list.slice();wcSet(list.filter(x=>x!==ts));toast("Отметка удалена",false,{label:"Вернуть",fn:()=>wcSet(was)})}));
-      box.append(w);setTimeout(()=>inp.focus(),0);
-    }else{
-      const b=el("button","wcchip",hm(ts));b.setAttribute("aria-label",`Отметка в ${hm(ts)}: изменить или удалить`);
-      b.onclick=()=>{wcEditing=ts;renderWc()};box.append(b);
-    }
+  for(const m of list){
+    const b=el("button","wcchip"+(m.at===wcPick?" sel":""));
+    b.innerHTML=(m.t?`<i style="background:${bsColor(m.t)}"></i>`:"")+`<span>${hm(m.at)}</span>`+(m.t?`<small>${m.t}</small>`:"");
+    b.setAttribute("aria-label",`Отметка в ${hm(m.at)}${m.t?", тип "+m.t+" — "+BRISTOL[m.t][0]:""}: изменить`);
+    b.onclick=()=>{wcNew=false;wcPick=wcPick===m.at?null:m.at;renderWc()};box.append(b);
   }
+  const pk=$("wcPick"),m=list.find(x=>x.at===wcPick);pk.hidden=!m;pk.innerHTML="";if(!m){wcPick=null;return}
+  const head=el("div","wcph");const ttl=el("div");
+  ttl.append(el("b",null,"Какой стул?"),el("small",null,m.t?`Тип ${m.t} — ${BRISTOL[m.t][0].toLowerCase()} (${BRISTOL[m.t][1]})`:"Бристольская шкала: от твёрдого к жидкому"));
+  const tm=el("input","wctime");tm.type="time";tm.value=hm(m.at);tm.setAttribute("aria-label","Время");
+  tm.onchange=()=>{const [h,mi]=tm.value.split(":").map(Number);if(isNaN(h))return;const d=new Date(m.at);d.setHours(h,mi,0,0);const at=d.getTime();wcPick=at;wcSet(list.map(x=>x.at===m.at?{...x,at}:x))};
+  head.append(ttl,tm);
+  const grid=el("div","bs");
+  for(let t=1;t<=7;t++){
+    const b=el("button","bsb"+(m.t===t?" on":""));b.style.setProperty("--bc",bsColor(t));
+    b.innerHTML=`${bsIcon(t)}<b>${t}</b>`;b.title=`${t} — ${BRISTOL[t][0]} (${BRISTOL[t][1]})`;b.setAttribute("aria-label",b.title);
+    b.setAttribute("aria-pressed",m.t===t);
+    b.onclick=()=>{haptic(10);wcPick=null;wcNew=false;wcSet(list.map(x=>x.at===m.at?{...x,t}:x));toast(`${hm(m.at)} · тип ${t}: ${BRISTOL[t][0].toLowerCase()}`)};
+    grid.append(b);
+  }
+  const foot=el("div","row");
+  const del=el("button","ghost danger","Удалить");del.onclick=()=>{const was=list.slice();wcPick=null;wcSet(list.filter(x=>x.at!==m.at));toast("Отметка удалена",false,{label:"Вернуть",fn:()=>wcSet(was)})};
+  const done=el("button","ghost",wcNew&&!m.t?"Пропустить":"Готово");done.onclick=()=>{wcPick=null;wcNew=false;renderWc()};
+  foot.append(del,el("span","spacer"),done);
+  pk.append(head,grid,foot);
 }
 async function wcSet(list){
-  const k=key(day),d=await getDay(k);d.toilet=list.slice().sort((a,b)=>a-b);dayData=d;renderWc();
+  const k=key(day),d=await getDay(k);d.toilet=list.slice().sort((a,b)=>a.at-b.at);dayData=d;renderWc();
   if(view==="week")renderWeek();
   await store(k,dayBody(d));
 }
 $("wcAdd").onclick=async()=>{
   haptic(12);
   const now=new Date(),isToday=key(day)===key(now);
-  let ts=now.getTime();
-  if(!isToday){const d=new Date(day);d.setHours(now.getHours(),now.getMinutes(),0,0);ts=d.getTime()} // another day: same clock time, editable
-  const d=await getDay(key(day)),was=(d.toilet||[]).slice();
-  if(!isToday)wcEditing=ts;
-  await wcSet([...was,ts]);
-  toast(`Отмечено в ${hm(ts)}`,false,{label:"Отменить",fn:()=>{wcEditing=null;wcSet(was)}});
+  let at=now.getTime();
+  if(!isToday){const d=new Date(day);d.setHours(now.getHours(),now.getMinutes(),0,0);at=d.getTime()} // another day: same clock time, editable
+  const d=await getDay(key(day)),was=marksOf(d);
+  wcPick=at;wcNew=true;
+  await wcSet([...was,{at}]);
+  $("wcPick").scrollIntoView({block:"nearest",behavior:"smooth"});
+  toast(`Отмечено в ${hm(at)}`,false,{label:"Отменить",fn:()=>{wcPick=null;wcSet(was)}});
 };
 $("wcToggle").onchange=async()=>{
   const on=$("wcToggle").checked;
@@ -223,7 +250,7 @@ $("wcToggle").onchange=async()=>{
   catch(e){$("wcToggle").checked=!on;toast(e.message,true)}
 };
 
-/* report: how the number of visits goes with what and how much was eaten */
+/* report: how often and what kind, against what and how much was eaten */
 function pearson(xs,ys){
   const n=xs.length;if(n<3)return null;
   const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;
@@ -232,45 +259,63 @@ function pearson(xs,ys){
 }
 const strength=r=>{const a=Math.abs(r);return a<.2?"связи почти нет":a<.4?"слабая связь":a<.6?"заметная связь":"сильная связь"};
 const MIN_DAYS=7;
+const dec=(v,d=1)=>v.toFixed(d).replace(".",",");
+const plDays=n=>n%10===1&&n%100!==11?"день":[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?"дня":"дней";
+function corrList(rows,y,up,down){
+  const feats=[
+    ["Калории в тот же день",r=>r.t.kcal],["Калории накануне",r=>r.prev?.food?r.prev.t.kcal:null],
+    ["Вес еды в тот же день",r=>r.t.grams],["Вес еды накануне",r=>r.prev?.food?r.prev.t.grams:null],
+    ["Углеводы накануне",r=>r.prev?.food?r.prev.t.carbs:null],["Жиры накануне",r=>r.prev?.food?r.prev.t.fat:null],
+    ["Белки накануне",r=>r.prev?.food?r.prev.t.protein:null],
+  ];
+  const res=feats.map(([name,f])=>{const xs=[],ys=[];for(const r of rows){const x=f(r),v=y(r);if(x!=null&&v!=null){xs.push(x);ys.push(v)}}
+    return{name,r:xs.length>=MIN_DAYS?pearson(xs,ys):null,n:xs.length}}).filter(x=>x.r!==null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
+  const list=el("div");
+  for(const x of res){
+    const c=el("div","corr"),top=el("div","cr");
+    top.append(el("b",null,x.name),el("span","r "+(x.r>0?"pos":"neg"),(x.r>0?"+":"")+dec(x.r,2)));
+    const bar=el("div","corrbar"),i=el("i");const w=Math.abs(x.r)*50;i.style.width=w+"%";i.style.left=x.r>0?"50%":(50-w)+"%";i.style.background=x.r>0?"var(--accent)":"var(--p)";bar.append(i);
+    const what=Math.abs(x.r)<.2?"":x.r>0?" — "+up:" — "+down;
+    c.append(top,bar,el("small",null,`${strength(x.r)}${what} · ${x.n} дн.`));list.append(c);
+  }
+  return list;
+}
 async function renderWcReport(){
   const card=$("wcReport");card.hidden=!(me&&me.toilet);if(card.hidden)return;
   const end=new Date(day),start=new Date(day);start.setDate(start.getDate()-60);
   try{await prefetch(start,end)}catch(e){return}
   const ds=[];for(let d=new Date(start);key(d)<=key(end);d.setDate(d.getDate()+1))ds.push(new Date(d));
-  const info=ds.map(d=>{const v=cache[key(d)]||{entries:[]},t=totals(v.entries);return{d,k:key(d),t,count:(v.toilet||[]).length,food:t.kcal>0,visits:v.toilet||[],entries:v.entries}});
+  const info=ds.map(d=>{const v=cache[key(d)]||{entries:[]},t=totals(v.entries),marks=marksOf(v),typed=marks.filter(m=>m.t);
+    return{d,k:key(d),t,marks,count:marks.length,food:t.kcal>0,entries:v.entries,type:typed.length?typed.reduce((a,m)=>a+m.t,0)/typed.length:null}});
   const first=info.findIndex(x=>x.count>0);
   const body=$("wcBody");body.innerHTML="";
   if(first<0){$("wcN").textContent="";body.append(el("div","msg","Отмечай походы кнопкой «Туалет» на экране «Сегодня» и записывай еду. Через неделю здесь появится, как одно связано с другим."));return}
   // days since the first mark, with food logged (a day without marks then counts as 0 visits)
   const rows=info.map((x,i)=>({...x,prev:info[i-1]})).slice(first).filter(x=>x.food);
-  const n=rows.length;$("wcN").textContent=`${n} ${n%10===1&&n%100!==11?"день":[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?"дня":"дней"}`;
+  const n=rows.length;$("wcN").textContent=`${n} ${plDays(n)}`;
   const counts=rows.map(r=>r.count),avg=n?counts.reduce((a,b)=>a+b,0)/n:0;
   // hours from the previous meal to each visit
   const gaps=[];info.slice(first).forEach((x,i)=>{const meals=[...(info[first+i-1]?.entries||[]),...x.entries].map(e=>e.at).filter(Boolean);
-    for(const v of x.visits){const before=meals.filter(a=>a<v);if(before.length)gaps.push((v-Math.max(...before))/36e5)}});
+    for(const m of x.marks){const before=meals.filter(a=>a<m.at);if(before.length)gaps.push((m.at-Math.max(...before))/36e5)}});
   gaps.sort((a,b)=>a-b);const med=gaps.length?gaps[Math.floor(gaps.length/2)]:null;
-  const st=el("div","wcstats");
-  for(const [v,l] of [[n?avg.toFixed(1).replace(".",","):"—","в среднем за день"],[n?String(Math.max(...counts)):"—","больше всего"],[med!==null?(med<1?Math.round(med*60)+" мин":med.toFixed(1).replace(".",",")+" ч"):"—","от еды до туалета"]]){
-    const c=el("div");c.append(el("b",null,v),el("small",null,l));st.append(c)}
-  body.append(st);
-  if(n<MIN_DAYS){body.append(el("div","msg",`Для выводов нужно хотя бы ${MIN_DAYS} дней с едой и отметками, сейчас ${n}. Лучше — две-три недели.`));return}
-  const feats=[
-    ["Калории в тот же день",r=>r.t.kcal,false],["Калории накануне",r=>r.prev?.food?r.prev.t.kcal:null,true],
-    ["Вес еды в тот же день",r=>r.t.grams,false],["Вес еды накануне",r=>r.prev?.food?r.prev.t.grams:null,true],
-    ["Углеводы накануне",r=>r.prev?.food?r.prev.t.carbs:null,true],["Жиры накануне",r=>r.prev?.food?r.prev.t.fat:null,true],
-    ["Белки накануне",r=>r.prev?.food?r.prev.t.protein:null,true],
-  ];
-  const res=feats.map(([name,f])=>{const xs=[],ys=[];for(const r of rows){const x=f(r);if(x!=null){xs.push(x);ys.push(r.count)}}
-    return{name,r:xs.length>=MIN_DAYS?pearson(xs,ys):null,n:xs.length}}).filter(x=>x.r!==null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
-  const list=el("div");
-  for(const x of res){
-    const c=el("div","corr"),top=el("div","cr");
-    top.append(el("b",null,x.name),el("span","r "+(x.r>0?"pos":"neg"),(x.r>0?"+":"")+x.r.toFixed(2).replace(".",",")));
-    const bar=el("div","corrbar"),i=el("i");const w=Math.abs(x.r)*50;i.style.width=w+"%";i.style.left=x.r>0?"50%":(50-w)+"%";i.style.background=x.r>0?"var(--accent)":"var(--p)";bar.append(i);
-    const what=Math.abs(x.r)<.2?"":x.r>0?" — когда больше, ходишь чаще":" — когда больше, ходишь реже";
-    c.append(top,bar,el("small",null,`${strength(x.r)}${what} · ${x.n} дн.`));list.append(c);
+  const stat=(items)=>{const st=el("div","wcstats");for(const [v,l] of items){const c=el("div");c.append(el("b",null,v),el("small",null,l));st.append(c)}return st};
+  body.append(stat([[n?dec(avg):"—","в среднем за день"],[n?String(Math.max(...counts)):"—","больше всего"],[med!==null?(med<1?Math.round(med*60)+" мин":dec(med)+" ч"):"—","от еды до туалета"]]));
+  // stool type: distribution and the usual type
+  const typed=info.slice(first).flatMap(x=>x.marks.filter(m=>m.t));
+  if(typed.length){
+    const dist=[0,0,0,0,0,0,0,0];typed.forEach(m=>dist[m.t]++);
+    const mode=dist.indexOf(Math.max(...dist.slice(1)),1),norm=(dist[3]+dist[4])/typed.length,mean=typed.reduce((a,m)=>a+m.t,0)/typed.length;
+    body.append(el("h4","wch","Консистенция"));
+    body.append(stat([[`тип ${mode}`,"чаще всего"],[Math.round(norm*100)+"%","в норме (3–4)"],[dec(mean),"средний тип"]]));
+    const bar=el("div","bsdist");
+    for(let t=1;t<=7;t++)if(dist[t]){const s=el("i");s.style.flex=dist[t];s.style.background=bsColor(t);s.title=`Тип ${t}: ${dist[t]}`;s.textContent=dist[t]/typed.length>=.08?t:"";bar.append(s)}
+    body.append(bar,el("small","bslegend",`${typed.length} оценок · жёлтый — твёрже нормы, зелёный — норма, красный — жиже`));
   }
-  body.append(list);
+  if(n<MIN_DAYS){body.append(el("div","msg",`Для выводов нужно хотя бы ${MIN_DAYS} дней с едой и отметками, сейчас ${n}. Лучше — две-три недели.`));return}
+  body.append(el("h4","wch","Как часто — и что влияет"),corrList(rows,r=>r.count,"когда больше, ходишь чаще","когда больше, ходишь реже"));
+  const typedDays=rows.filter(r=>r.type!==null).length;
+  if(typedDays>=MIN_DAYS)body.append(el("h4","wch","Консистенция — и что влияет"),corrList(rows,r=>r.type,"когда больше, стул мягче","когда больше, стул твёрже"));
+  else if(typed.length)body.append(el("div","msg",`Для связи консистенции с едой нужно ${MIN_DAYS} дней с оценками, сейчас ${typedDays}.`));
   body.append(el("div","msg","Корреляция показывает, что числа меняются вместе, но не доказывает причину. Чем больше дней, тем надёжнее вывод."));
 }
 
