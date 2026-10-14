@@ -35,6 +35,7 @@ let me=null;
 /* Days that failed to save stay here and are retried on demand, when the network returns,
    and when the app comes back to the foreground. Always the latest version of the day is sent. */
 const unsaved=new Set();
+const dayBody=d=>d.toilet&&d.toilet.length?{entries:d.entries,toilet:d.toilet}:{entries:d.entries};
 async function store(k,v){
   try{await api("/days/"+k,{method:"PUT",body:v});unsaved.delete(k)}
   catch(e){
@@ -47,7 +48,7 @@ async function store(k,v){
 let flushing=false;
 async function flushUnsaved(){
   if(flushing||!unsaved.size)return;flushing=true;
-  try{for(const k of [...unsaved]){if(cache[k])await api("/days/"+k,{method:"PUT",body:{entries:cache[k].entries}});unsaved.delete(k)}
+  try{for(const k of [...unsaved]){if(cache[k])await api("/days/"+k,{method:"PUT",body:dayBody(cache[k])});unsaved.delete(k)}
     toast("Сохранено")}
   catch(e){toast("Всё ещё нет связи. Попробую сам, когда она появится.",true,{label:"Повторить",fn:flushUnsaved})}
   finally{flushing=false}
@@ -118,6 +119,7 @@ function renderDay(){
     $("b"+id).style.width=Math.min(v/tg*100,100)+"%";
     $("t"+id).textContent=`${Math.round(v)} / ${Math.round(tg)} г`;
   }
+  renderWc();
   const box=$("meals");box.innerHTML="";
   if(!dayData.entries.length){
     box.innerHTML=`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/></svg>Пока пусто. Нажми на камеру внизу и сфотографируй тарелку.</div>`;return;
@@ -175,7 +177,103 @@ async function renderWeek(){
     b.innerHTML=`<div class="col"><i class="${vals[i]>goal?"over":""}" style="height:${vals[i]/max*100}%"></i></div><b>${vals[i]?Math.round(vals[i]):"—"}</b><small>${d.toLocaleDateString("ru-RU",{weekday:"short"})}</small>`;
     b.onclick=()=>{day=d;haptic();go("diary");openDay()};box.append(b);
   });
+  if(view==="week")renderWcReport();
 }
+/* ---------- toilet log: one tap = one mark with the time ---------- */
+const hm=ts=>new Date(ts).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+const times=n=>n%10===1&&n%100!==11?"раз":[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?"раза":"раз";
+let wcEditing=null;
+function renderWc(){
+  const card=$("wc");card.hidden=!(me&&me.toilet);if(card.hidden)return;
+  const list=(dayData.toilet||[]).slice().sort((a,b)=>a-b),n=list.length;
+  const isToday=key(day)===key(new Date());
+  $("wcCount").textContent=n?`${n} ${times(n)}${isToday?" сегодня":""} · последний в ${hm(list[n-1])}`:(isToday?"Сегодня ещё не отмечено":"Отметок нет");
+  const box=$("wcList");box.innerHTML="";
+  for(const ts of list){
+    if(ts===wcEditing){
+      const w=el("span","wcedit"),inp=el("input");inp.type="time";inp.value=hm(ts);inp.setAttribute("aria-label","Время");
+      inp.onchange=()=>{const [h,m]=inp.value.split(":").map(Number);if(isNaN(h))return;const d=new Date(ts);d.setHours(h,m,0,0);wcEditing=d.getTime();wcSet(list.map(x=>x===ts?wcEditing:x))};
+      inp.onblur=()=>setTimeout(()=>{if(wcEditing!==null&&document.activeElement?.closest?.(".wcedit")!==w){wcEditing=null;renderWc()}},150);
+      w.append(inp,xbtn("Удалить отметку",()=>{wcEditing=null;const was=list.slice();wcSet(list.filter(x=>x!==ts));toast("Отметка удалена",false,{label:"Вернуть",fn:()=>wcSet(was)})}));
+      box.append(w);setTimeout(()=>inp.focus(),0);
+    }else{
+      const b=el("button","wcchip",hm(ts));b.setAttribute("aria-label",`Отметка в ${hm(ts)}: изменить или удалить`);
+      b.onclick=()=>{wcEditing=ts;renderWc()};box.append(b);
+    }
+  }
+}
+async function wcSet(list){
+  const k=key(day),d=await getDay(k);d.toilet=list.slice().sort((a,b)=>a-b);dayData=d;renderWc();
+  if(view==="week")renderWeek();
+  await store(k,dayBody(d));
+}
+$("wcAdd").onclick=async()=>{
+  haptic(12);
+  const now=new Date(),isToday=key(day)===key(now);
+  let ts=now.getTime();
+  if(!isToday){const d=new Date(day);d.setHours(now.getHours(),now.getMinutes(),0,0);ts=d.getTime()} // another day: same clock time, editable
+  const d=await getDay(key(day)),was=(d.toilet||[]).slice();
+  if(!isToday)wcEditing=ts;
+  await wcSet([...was,ts]);
+  toast(`Отмечено в ${hm(ts)}`,false,{label:"Отменить",fn:()=>{wcEditing=null;wcSet(was)}});
+};
+$("wcToggle").onchange=async()=>{
+  const on=$("wcToggle").checked;
+  try{await api("/me",{method:"PUT",body:{toilet:on}});me.toilet=on;renderDay();renderWeek();toast(on?"Кнопка «Туалет» на экране «Сегодня»":"Отметки скрыты, записанное сохранено")}
+  catch(e){$("wcToggle").checked=!on;toast(e.message,true)}
+};
+
+/* report: how the number of visits goes with what and how much was eaten */
+function pearson(xs,ys){
+  const n=xs.length;if(n<3)return null;
+  const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;
+  let sxy=0,sxx=0,syy=0;for(let i=0;i<n;i++){const dx=xs[i]-mx,dy=ys[i]-my;sxy+=dx*dy;sxx+=dx*dx;syy+=dy*dy}
+  return sxx&&syy?sxy/Math.sqrt(sxx*syy):null;
+}
+const strength=r=>{const a=Math.abs(r);return a<.2?"связи почти нет":a<.4?"слабая связь":a<.6?"заметная связь":"сильная связь"};
+const MIN_DAYS=7;
+async function renderWcReport(){
+  const card=$("wcReport");card.hidden=!(me&&me.toilet);if(card.hidden)return;
+  const end=new Date(day),start=new Date(day);start.setDate(start.getDate()-60);
+  try{await prefetch(start,end)}catch(e){return}
+  const ds=[];for(let d=new Date(start);key(d)<=key(end);d.setDate(d.getDate()+1))ds.push(new Date(d));
+  const info=ds.map(d=>{const v=cache[key(d)]||{entries:[]},t=totals(v.entries);return{d,k:key(d),t,count:(v.toilet||[]).length,food:t.kcal>0,visits:v.toilet||[],entries:v.entries}});
+  const first=info.findIndex(x=>x.count>0);
+  const body=$("wcBody");body.innerHTML="";
+  if(first<0){$("wcN").textContent="";body.append(el("div","msg","Отмечай походы кнопкой «Туалет» на экране «Сегодня» и записывай еду. Через неделю здесь появится, как одно связано с другим."));return}
+  // days since the first mark, with food logged (a day without marks then counts as 0 visits)
+  const rows=info.map((x,i)=>({...x,prev:info[i-1]})).slice(first).filter(x=>x.food);
+  const n=rows.length;$("wcN").textContent=`${n} ${n%10===1&&n%100!==11?"день":[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?"дня":"дней"}`;
+  const counts=rows.map(r=>r.count),avg=n?counts.reduce((a,b)=>a+b,0)/n:0;
+  // hours from the previous meal to each visit
+  const gaps=[];info.slice(first).forEach((x,i)=>{const meals=[...(info[first+i-1]?.entries||[]),...x.entries].map(e=>e.at).filter(Boolean);
+    for(const v of x.visits){const before=meals.filter(a=>a<v);if(before.length)gaps.push((v-Math.max(...before))/36e5)}});
+  gaps.sort((a,b)=>a-b);const med=gaps.length?gaps[Math.floor(gaps.length/2)]:null;
+  const st=el("div","wcstats");
+  for(const [v,l] of [[n?avg.toFixed(1).replace(".",","):"—","в среднем за день"],[n?String(Math.max(...counts)):"—","больше всего"],[med!==null?(med<1?Math.round(med*60)+" мин":med.toFixed(1).replace(".",",")+" ч"):"—","от еды до туалета"]]){
+    const c=el("div");c.append(el("b",null,v),el("small",null,l));st.append(c)}
+  body.append(st);
+  if(n<MIN_DAYS){body.append(el("div","msg",`Для выводов нужно хотя бы ${MIN_DAYS} дней с едой и отметками, сейчас ${n}. Лучше — две-три недели.`));return}
+  const feats=[
+    ["Калории в тот же день",r=>r.t.kcal,false],["Калории накануне",r=>r.prev?.food?r.prev.t.kcal:null,true],
+    ["Вес еды в тот же день",r=>r.t.grams,false],["Вес еды накануне",r=>r.prev?.food?r.prev.t.grams:null,true],
+    ["Углеводы накануне",r=>r.prev?.food?r.prev.t.carbs:null,true],["Жиры накануне",r=>r.prev?.food?r.prev.t.fat:null,true],
+    ["Белки накануне",r=>r.prev?.food?r.prev.t.protein:null,true],
+  ];
+  const res=feats.map(([name,f])=>{const xs=[],ys=[];for(const r of rows){const x=f(r);if(x!=null){xs.push(x);ys.push(r.count)}}
+    return{name,r:xs.length>=MIN_DAYS?pearson(xs,ys):null,n:xs.length}}).filter(x=>x.r!==null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
+  const list=el("div");
+  for(const x of res){
+    const c=el("div","corr"),top=el("div","cr");
+    top.append(el("b",null,x.name),el("span","r "+(x.r>0?"pos":"neg"),(x.r>0?"+":"")+x.r.toFixed(2).replace(".",",")));
+    const bar=el("div","corrbar"),i=el("i");const w=Math.abs(x.r)*50;i.style.width=w+"%";i.style.left=x.r>0?"50%":(50-w)+"%";i.style.background=x.r>0?"var(--accent)":"var(--p)";bar.append(i);
+    const what=Math.abs(x.r)<.2?"":x.r>0?" — когда больше, ходишь чаще":" — когда больше, ходишь реже";
+    c.append(top,bar,el("small",null,`${strength(x.r)}${what} · ${x.n} дн.`));list.append(c);
+  }
+  body.append(list);
+  body.append(el("div","msg","Корреляция показывает, что числа меняются вместе, но не доказывает причину. Чем больше дней, тем надёжнее вывод."));
+}
+
 async function openDay(){
   const from=new Date(day);from.setDate(from.getDate()-6);
   try{await prefetch(from,day)}catch(e){if(e.code!==401)showMsg("Не удалось загрузить дневник: "+e.message,true);return}
@@ -286,7 +384,7 @@ async function saveDraftInner(){
   draft=[];draftNote="";$("text").value="";clearPhoto();renderDraft();showMsg("");
   closeSheet();go("diary");haptic(15);toast(`${ml}: +${kc} ккал`);
   renderDay();renderWeek();
-  await store(k,{entries:d.entries});
+  await store(k,dayBody(d));
 }
 async function mutate(eid,fn){
   const k=key(day); const d=await getDay(k);
@@ -296,7 +394,7 @@ async function mutate(eid,fn){
   if(!e.dishes.length)d.entries=d.entries.filter(x=>x!==e);
   if(e.dishes.length!==before)[...openSet].forEach(x=>x.startsWith(eid+":")&&openSet.delete(x));
   dayData=d;renderDay();renderWeek();
-  await store(k,{entries:d.entries});
+  await store(k,dayBody(d));
 }
 const removeDish=(eid,di)=>mutate(eid,e=>e.dishes.splice(di,1));
 const removeIng=(eid,di,ii)=>mutate(eid,e=>e.dishes[di].items.splice(ii,1));
@@ -598,6 +696,7 @@ function renderAccount(){
   const letter=(me.name||me.email||"?").trim().charAt(0)||"?";$("avatar").textContent=letter;$("gear").textContent=letter;
   $("whoEmail").textContent=me.email?`Вход по почте ${me.email}`:"";
   $("attachForm").hidden=!!me.email;
+  $("wcToggle").checked=!!me.toilet;
 }
 // accounts made by invite links can attach an email
 $("attachForm").onsubmit=async ev=>{

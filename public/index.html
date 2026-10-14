@@ -258,6 +258,31 @@ textarea#text{width:100%;min-height:76px;resize:vertical;border:none;background:
 .urow .who small{display:block;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .urow .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .joinrow{flex-wrap:wrap}
+/* toilet log */
+.wc{gap:10px;padding:14px 16px}
+.wcrow{display:flex;align-items:center;gap:12px}
+.wchead{flex:1;display:flex;flex-direction:column;gap:1px}
+.wchead small{color:var(--muted);font-size:13px}
+.wcadd{min-height:40px}
+.wcchips{display:flex;flex-wrap:wrap;gap:6px}
+.wcchips:empty{display:none}
+.wcchip{border:none;background:var(--soft);color:var(--ink);border-radius:999px;padding:6px 12px;font:600 14px/1 var(--num);min-height:32px}
+.wcedit{display:inline-flex;align-items:center;gap:4px;background:var(--soft);border-radius:999px;padding:2px 4px 2px 10px}
+.wcedit input{border:none;background:none;font:600 14px var(--num);color:var(--ink);min-height:30px}
+.wcedit .x{width:30px;height:30px}
+.corr{display:flex;flex-direction:column;gap:2px;padding:10px 0;border-top:.5px solid var(--sep)}
+.corr:first-child{border-top:none}
+.corr .cr{display:flex;align-items:baseline;gap:8px}
+.corr b{font-weight:600;flex:1}
+.corr .r{font:700 15px var(--num)}
+.corr .r.pos{color:var(--accent)}.corr .r.neg{color:var(--p)}
+.corr small{color:var(--muted);font-size:13px}
+.corrbar{height:4px;border-radius:2px;background:var(--soft);position:relative;overflow:hidden;margin:4px 0 2px}
+.corrbar i{position:absolute;top:0;bottom:0;left:50%;border-radius:2px}
+.wcstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.wcstats div{background:var(--soft);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px}
+.wcstats b{font:700 20px var(--num)}
+.wcstats small{color:var(--muted);font-size:12px}
 #updLogBox summary{color:var(--muted);font-size:14px;padding:6px 0;cursor:pointer}
 #updLog{margin:6px 0 0;padding:10px;background:var(--soft);border-radius:10px;font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
 .joinrow button{flex:1 1 auto}
@@ -411,6 +436,13 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
           <div class="macro"><span>Углеводы</span><div class="bar"><i id="bc" style="background:var(--c);width:0"></i></div><span id="tc">0 г</span></div>
         </div>
       </section>
+      <section class="card wc" id="wc" hidden aria-label="Туалет">
+        <div class="wcrow">
+          <div class="wchead"><b>Туалет</b><small id="wcCount"></small></div>
+          <button class="ghost wcadd" id="wcAdd" type="button">+ Отметить</button>
+        </div>
+        <div class="wcchips" id="wcList"></div>
+      </section>
       <div class="meals" id="meals"></div>
       <button class="addtext" id="addText">Добавить без фото</button>
       <p class="foot">Оценки приблизительные: модель считает по фото и справочным значениям. Проверяй граммы — их можно поправить в любой момент.</p>
@@ -420,11 +452,16 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
       <div class="wstats" id="weekStats"></div>
       <div class="card"><div class="week" id="week"></div></div>
       <p class="foot">Пунктир — твоя цель. Нажми на столбик, чтобы открыть день.</p>
+      <section class="card" id="wcReport" hidden aria-label="Туалет и еда">
+        <div class="row"><span class="label">Туалет и еда</span><span class="spacer"></span><span class="pill" id="wcN"></span></div>
+        <div id="wcBody"></div>
+      </section>
     </section>
 
     <section class="view" id="settings" hidden aria-label="Настройки">
       <div class="card account">
         <div class="profile"><div class="avatar" id="avatar">?</div><div><b id="who"></b><div class="msg" id="whoEmail"></div></div></div>
+        <label class="check" for="wcToggle"><input type="checkbox" id="wcToggle"><span>Отмечать походы в туалет<small>На экране «Сегодня» появится кнопка, а в «Отчёте» — связь с тем, что и сколько ты ешь.</small></span></label>
         <form id="attachForm" class="attach" hidden novalidate>
           <div class="msg">Привяжи почту, чтобы входить с любого устройства по коду.</div>
           <div class="row"><input id="aEmail" class="txt" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Почта"><button class="ghost" id="aSend" type="submit">Получить код</button></div>

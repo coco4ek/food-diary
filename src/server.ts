@@ -125,10 +125,11 @@ app.register(async (api) => {
 
   api.get("/me", async (req) => ({
     name: req.user.name, email: req.user.email, isAdmin: !!req.user.is_admin, goal: req.user.goal, dailyLimit: confNum("daily_limit"),
-    mailConfigured: mailConfigured(), llmTimeoutSec: confNum("llm_timeout_sec"),
+    mailConfigured: mailConfigured(), llmTimeoutSec: confNum("llm_timeout_sec"), toilet: !!req.user.track_toilet,
   }));
 
-  api.put<{ Body: { goal?: number; name?: string } }>("/me", async (req, reply) => {
+  api.put<{ Body: { goal?: number; name?: string; toilet?: boolean } }>("/me", async (req, reply) => {
+    if (typeof req.body?.toilet === "boolean") db.prepare(`UPDATE users SET track_toilet = ? WHERE id = ?`).run(req.body.toilet ? 1 : 0, req.user.id);
     const goal = Number(req.body?.goal);
     if (req.body?.goal !== undefined) {
       if (!Number.isFinite(goal) || goal < 800 || goal > 6000) return reply.code(400).send({ error: "Цель должна быть от 800 до 6000 ккал" });
@@ -146,13 +147,18 @@ app.register(async (api) => {
     return { days: getDays(req.user.id, from, to) };
   });
 
-  api.put<{ Params: { date: string }; Body: { entries: unknown } }>("/days/:date", async (req, reply) => {
+  api.put<{ Params: { date: string }; Body: { entries: unknown; toilet?: unknown } }>("/days/:date", async (req, reply) => {
     const date = req.params.date.replace(/^day-/, ""); // early app versions sent "day-YYYY-MM-DD"
     const entries = req.body?.entries;
     if (!DATE.test(date) || !Array.isArray(entries)) return reply.code(400).send({ error: "Неверные данные дня" });
     const size = JSON.stringify(entries).length;
     if (size > 512 * 1024) return reply.code(413).send({ error: "Слишком много записей за день" });
-    putDay(req.user.id, date, { entries });
+    // toilet visits: timestamps (ms) of that day
+    const t = req.body?.toilet;
+    if (t !== undefined && (!Array.isArray(t) || t.length > 50 || !t.every((x) => Number.isFinite(x) && x > 0)))
+      return reply.code(400).send({ error: "Неверные отметки" });
+    const toilet = Array.isArray(t) && t.length ? (t as number[]).map(Math.round).sort((a, b) => a - b) : undefined;
+    putDay(req.user.id, date, toilet ? { entries, toilet } : { entries });
     return { ok: true };
   });
 

@@ -92,6 +92,7 @@ const cols = new Set((db.prepare(`PRAGMA table_info(users)`).all() as { name: st
 if (!cols.has("email")) db.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
 if (!cols.has("disabled")) db.exec(`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`);
 if (!cols.has("last_login_at")) db.exec(`ALTER TABLE users ADD COLUMN last_login_at INTEGER`);
+if (!cols.has("track_toilet")) db.exec(`ALTER TABLE users ADD COLUMN track_toilet INTEGER NOT NULL DEFAULT 0`);
 const invCols = new Set((db.prepare(`PRAGMA table_info(email_invites)`).all() as { name: string }[]).map((c) => c.name));
 if (!invCols.has("token_hash")) db.exec(`ALTER TABLE email_invites ADD COLUMN token_hash TEXT`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)`);
@@ -110,8 +111,8 @@ export const hash = (t: string) => createHash("sha256").update(t).digest("hex");
 export const newToken = () => randomBytes(24).toString("base64url");
 export const now = () => Date.now();
 
-export type User = { id: number; name: string; email: string | null; is_admin: number; goal: number; disabled: number };
-export const USER_COLS = "id, name, email, is_admin, goal, disabled";
+export type User = { id: number; name: string; email: string | null; is_admin: number; goal: number; disabled: number; track_toilet: number };
+export const USER_COLS = "id, name, email, is_admin, goal, disabled, track_toilet";
 
 const DAY = 24 * 3600 * 1000;
 
@@ -157,7 +158,7 @@ export function userBySession(token: string | undefined): User | null {
   if (!token) return null;
   const h = hash(token);
   const u = db
-    .prepare(`SELECT u.id, u.name, u.email, u.is_admin, u.goal, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.disabled = 0`)
+    .prepare(`SELECT ${USER_COLS.split(", ").map((c) => "u." + c).join(", ")} FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.disabled = 0`)
     .get(h) as User | undefined;
   if (u) db.prepare(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`).run(now(), h);
   return u ?? null;
