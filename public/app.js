@@ -219,7 +219,8 @@ function renderWc(){
     const b=el("button","bsb"+(m.t===t?" on":""));b.style.setProperty("--bc",bsColor(t));
     b.innerHTML=`${bsIcon(t)}<b>${t}</b>`;b.title=`${t} — ${BRISTOL[t][0]} (${BRISTOL[t][1]})`;b.setAttribute("aria-label",b.title);
     b.setAttribute("aria-pressed",m.t===t);
-    b.onclick=()=>{haptic(10);wcPick=null;wcNew=false;wcSet(list.map(x=>x.at===m.at?{...x,t}:x));toast(`${hm(m.at)} · тип ${t}: ${BRISTOL[t][0].toLowerCase()}`)};
+    // the panel stays open (the choice can be changed); it closes on «Готово»
+    b.onclick=()=>{haptic(10);wcNew=false;wcSet(list.map(x=>x.at===m.at?{...x,t}:x))};
     grid.append(b);
   }
   const foot=el("div","row");
