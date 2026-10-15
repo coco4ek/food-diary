@@ -116,6 +116,14 @@ input,textarea{font-size:16px} /* 16px+ stops iOS zooming into fields */
 /* ---------- diary list (iOS inset grouped) ---------- */
 .meals{display:flex;flex-direction:column;gap:18px}
 .meal h3{margin:0 16px 6px;display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.meal h3 .mh{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.meal h3 .mh b{font-weight:600}
+.mtchip{border:none;background:var(--soft);color:var(--muted);border-radius:999px;padding:3px 8px;font:600 12.5px/1.2 var(--num);letter-spacing:0;min-height:24px}
+.mtin{border:none;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--accent);border-radius:8px;font:600 14px var(--num);color:var(--ink);padding:2px 6px;min-height:28px}
+.mtrow{display:flex;align-items:center;gap:8px;font-size:15px;margin-top:-2px}
+.mtrow span{color:var(--muted)}
+.mtrow small{flex:1;color:var(--c);font-size:13px;font-weight:600}
+.mtime{border:none;background:var(--soft);border-radius:10px;padding:7px 10px;font:600 16px var(--num);color:var(--ink);min-height:38px}
 .meal h3 span{font-family:var(--num);text-transform:none;letter-spacing:0;font-size:14px}
 .mlist{background:var(--surface);border-radius:var(--r);overflow:hidden}
 .dish+.dish{border-top:.5px solid var(--sep)}
@@ -564,6 +572,7 @@ select.txt{-webkit-appearance:none;appearance:none;padding-right:36px;background
     </div>
     <div class="sheetbody" id="sheetBody">
       <div class="seg" id="mealSeg" role="group" aria-label="Приём пищи"></div>
+      <label class="mtrow" for="mealTime"><span>Время</span><small id="mealTimeSrc"></small><input type="time" id="mealTime" class="mtime"></label>
       <div class="thumbs" id="thumbs" hidden></div>
       <div class="msg" id="msg" hidden></div>
       <div id="preview" hidden>

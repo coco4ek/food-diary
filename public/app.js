@@ -11,6 +11,8 @@ let day=new Date(); day.setHours(12,0,0,0);
 // 04:00–10:59 завтрак, 11:00–15:59 обед, 16:00–03:59 ужин
 const mealByTime=(h=new Date().getHours())=>h>=4&&h<11?"breakfast":h>=11&&h<16?"lunch":"dinner";
 let meal=mealByTime();
+// when the food was eaten: from the photo (EXIF) or the clock; editable in the sheet
+let mealAt=null,mealManual=false,timeManual=false;
 let dayData={entries:[]}; let goal=2000; const openSet=new Set();
 let draft=[]; let draftNote=""; let photos=[]; let maxPhotos=4;
 
@@ -98,7 +100,41 @@ function dayName(d){
 }
 function renderSeg(){
   $("mealSeg").innerHTML="";
-  for(const [k,l] of MEALS){const b=document.createElement("button");b.textContent=l;b.setAttribute("aria-pressed",k===meal);b.onclick=()=>{meal=k;renderSeg()};$("mealSeg").append(b)}
+  for(const [k,l] of MEALS){const b=document.createElement("button");b.textContent=l;b.setAttribute("aria-pressed",k===meal);b.onclick=()=>{meal=k;mealManual=true;renderSeg()};$("mealSeg").append(b)}
+}
+/* meal time: the viewed day + a clock time */
+const atOn=(d,h,m)=>{const x=new Date(d);x.setHours(h,m,0,0);return x.getTime()};
+function setMealAt(at,src){
+  mealAt=at;$("mealTime").value=hm(at);$("mealTimeSrc").textContent=src||"";
+  if(!mealManual){meal=mealByTime(new Date(at).getHours());renderSeg()}
+}
+function resetMealTime(){
+  mealManual=false;timeManual=false;const now=new Date();
+  setMealAt(key(day)===key(now)?now.getTime():atOn(day,now.getHours(),now.getMinutes()),"");
+}
+$("mealTime").onchange=()=>{const [h,m]=$("mealTime").value.split(":").map(Number);if(isNaN(h))return;timeManual=true;setMealAt(atOn(day,h,m),"")};
+/* EXIF DateTimeOriginal of a JPEG (camera/gallery photo), as local time; null if absent */
+async function exifTime(file){
+  try{
+    const b=new DataView(await file.slice(0,256*1024).arrayBuffer());
+    if(b.getUint16(0)!==0xFFD8)return null;
+    let o=2;
+    while(o+4<b.byteLength){
+      const mk=b.getUint16(o),len=b.getUint16(o+2);
+      if(mk===0xFFE1&&b.getUint32(o+4)===0x45786966){ // "Exif"
+        const t=o+10,le=b.getUint16(t)===0x4949,u16=x=>b.getUint16(t+x,le),u32=x=>b.getUint32(t+x,le);
+        const tags=(ifd)=>{const n=u16(ifd),r={};for(let i=0;i<n;i++){const e=ifd+2+i*12;r[u16(e)]={type:u16(e+2),count:u32(e+4),val:u32(e+8)}}return r};
+        const str=(tg)=>{let s="";for(let i=0;i<Math.min(tg.count,20);i++)s+=String.fromCharCode(b.getUint8(t+tg.val+i));return s};
+        const ifd0=tags(u32(4));let tg=null;
+        if(ifd0[0x8769]){const ex=tags(ifd0[0x8769].val);tg=ex[0x9003]||ex[0x9004]}
+        tg=tg||ifd0[0x0132];if(!tg)return null;
+        const m=str(tg).match(/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d)/);if(!m)return null;
+        return new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]).getTime();
+      }
+      if((mk&0xFF00)!==0xFF00)break;o+=2+len;
+    }
+  }catch(e){}
+  return null;
 }
 function renderDay(){
   const today=new Date();today.setHours(12,0,0,0);
@@ -125,10 +161,12 @@ function renderDay(){
     box.innerHTML=`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/></svg>Пока пусто. Нажми на камеру внизу и сфотографируй тарелку.</div>`;return;
   }
   for(const [k,l] of MEALS){
-    const es=dayData.entries.filter(e=>e.meal===k); if(!es.length)continue;
+    const es=dayData.entries.filter(e=>e.meal===k).sort((a,b)=>(a.at||0)-(b.at||0)); if(!es.length)continue;
     const sec=document.createElement("div");sec.className="meal";
     const kc=Math.round(totals(es).kcal);
-    sec.innerHTML=`<h3>${l}<span>${kc} ккал</span></h3>`;const list=el("div","mlist");sec.append(list);
+    const h3=el("h3"),lab=el("div","mh");lab.append(el("b",null,l));
+    for(const e of es)if(e.at)lab.append(timeChip(e));
+    h3.append(lab,el("span",null,`${kc} ккал`));sec.append(h3);const list=el("div","mlist");sec.append(list);
     for(const e of es) e.dishes.forEach((d,di)=>{
       const t=sumI(d.items), key2=e.id+":"+di;
       const multi=d.items.length>1||(d.items[0]&&d.items[0].name!==d.name);
@@ -178,6 +216,18 @@ async function renderWeek(){
     b.onclick=()=>{day=d;haptic();go("diary");openDay()};box.append(b);
   });
   if(view==="week")renderWcReport();
+}
+/* time of a meal in the diary: tap to correct it */
+function timeChip(e){
+  const b=el("button","mtchip",hm(e.at));b.setAttribute("aria-label",`Время приёма ${hm(e.at)}: изменить`);
+  b.onclick=()=>{
+    const inp=el("input","mtin");inp.type="time";inp.value=hm(e.at);inp.setAttribute("aria-label","Время приёма пищи");
+    let done=false;const fin=ok=>{if(done)return;done=true;const [h,m]=inp.value.split(":").map(Number);
+      if(ok&&!isNaN(h)&&inp.value!==hm(e.at))mutate(e.id,en=>{en.at=atOn(day,h,m)});else inp.replaceWith(b)};
+    inp.onchange=()=>fin(true);inp.onblur=()=>fin(true);inp.onkeydown=ev=>{if(ev.key==="Escape")fin(false)};
+    b.replaceWith(inp);inp.focus();
+  };
+  return b;
 }
 /* ---------- toilet log: one tap = one mark with the time, then the stool type (Bristol scale 1–7) ---------- */
 const hm=ts=>new Date(ts).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
@@ -433,7 +483,9 @@ async function saveDraftInner(){
     return{name:dn,...(d.tags&&d.tags.length?{tags:d.tags}:{}),items:d.items.filter(i=>i.kcal>0).map(i=>({...normI(i),name:i.name.trim()||dn}))}}).filter(d=>d.items.length);
   if(!dishes.length){showMsg("Укажи калории хотя бы для одного ингредиента.",true);return}
   const k=key(day); const d=await getDay(k);
-  d.entries.push({id:uidGen(),meal,text:$("text").value.trim(),at:Date.now(),dishes});
+  const [hh,mm]=($("mealTime").value||"").split(":").map(Number);
+  const at=isNaN(hh)?(mealAt||Date.now()):atOn(day,hh,mm);
+  d.entries.push({id:uidGen(),meal,text:$("text").value.trim(),at,dishes});
   const kc=Math.round(sumI(dishes.flatMap(x=>x.items)).kcal),ml=(MEALS.find(m=>m[0]===meal)||[0,""])[1];
   draft=[];draftNote="";$("text").value="";clearPhoto();renderDraft();showMsg("");
   closeSheet();go("diary");haptic(15);toast(`${ml}: +${kc} ккал`);
@@ -516,7 +568,7 @@ function openSheet(mode){
   const s=$("sheet"),sc=$("scrim");
   if(!sheetOpen()){
     // a fresh entry: pick breakfast/lunch/dinner by the current time (a draft in progress keeps its choice)
-    if(!draft.length&&!photos.length){meal=mealByTime();renderSeg()}
+    if(!draft.length&&!photos.length){resetMealTime();renderSeg()}
     s.hidden=false;sc.hidden=false;void s.offsetHeight;s.classList.add("on");sc.classList.add("on");
     document.body.style.overflow="hidden";history.pushState({sheet:1},"");
   }
@@ -600,6 +652,11 @@ async function takeFiles(input){
   const fs=[...input.files].slice(0,Math.max(0,maxPhotos-photos.length));input.value="";
   if(!fs.length)return;
   openSheet("photo");
+  // the photo knows when the food was eaten (for gallery photos taken earlier)
+  if(!timeManual){
+    const ts=(await Promise.all(fs.map(exifTime))).filter(t=>t&&t<=Date.now()+5*60e3&&key(new Date(t))===key(day));
+    if(ts.length)setMealAt(Math.min(...ts),Math.abs(Date.now()-Math.min(...ts))>10*60e3?"по фото":"");
+  }
   for(const f of fs){const b=await shrink(f);photos.push({blob:b,url:URL.createObjectURL(b)})}
   renderThumbs();estimate();
 }
